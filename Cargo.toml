@@ -11,6 +11,9 @@ imagequant = "4"
 fast_image_resize = "5"
 rayon = "1.10"
 
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.6"
+
 [dev-dependencies]
 criterion = "0.5"
 
