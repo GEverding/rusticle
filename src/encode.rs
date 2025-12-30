@@ -93,7 +93,7 @@ fn encode_frame<W: Write>(
     Ok(())
 }
 
-/// Quantize RGBA pixels to indexed color using color_quant.
+/// Quantize RGBA pixels to indexed color using imagequant.
 fn quantize_rgba(rgba_pixels: &[u8], width: usize, height: usize) -> Result<(Vec<u8>, Vec<u8>)> {
     if rgba_pixels.len() != width * height * 4 {
         return Err(Error::EncodeError(format!(
@@ -103,18 +103,53 @@ fn quantize_rgba(rgba_pixels: &[u8], width: usize, height: usize) -> Result<(Vec
         )));
     }
 
-    // Quantize to 256 colors using RGBA pixels directly
-    let nq = color_quant::NeuQuant::new(10, 256, rgba_pixels);
-    let palette = nq.color_map_rgb().to_vec();
+    // Convert raw bytes to RGBA structs
+    let rgba_data: Vec<imagequant::RGBA> = rgba_pixels
+        .chunks_exact(4)
+        .map(|chunk| imagequant::RGBA {
+            r: chunk[0],
+            g: chunk[1],
+            b: chunk[2],
+            a: chunk[3],
+        })
+        .collect();
 
-    // Map each pixel to its palette index
-    let mut indexed = Vec::with_capacity(width * height);
-    for chunk in rgba_pixels.chunks_exact(4) {
-        let idx = nq.index_of(chunk);
-        indexed.push(idx as u8);
+    // Create imagequant attributes
+    let mut attr = imagequant::Attributes::new();
+    attr.set_max_colors(256)
+        .map_err(|e| Error::EncodeError(format!("failed to set max colors: {}", e)))?;
+    attr.set_quality(0, 100)
+        .map_err(|e| Error::EncodeError(format!("failed to set quality: {}", e)))?;
+
+    // Create image from RGBA pixels
+    let mut img = attr
+        .new_image_borrowed(&rgba_data, width, height, 0.0)
+        .map_err(|e| Error::EncodeError(format!("failed to create image: {}", e)))?;
+
+    // Quantize
+    let mut result = attr
+        .quantize(&mut img)
+        .map_err(|e| Error::EncodeError(format!("failed to quantize: {}", e)))?;
+
+    // Enable dithering for better visual quality
+    result
+        .set_dithering_level(1.0)
+        .map_err(|e| Error::EncodeError(format!("failed to set dithering: {}", e)))?;
+
+    // Remap pixels to palette indices
+    let (palette, indices) = result
+        .remapped(&mut img)
+        .map_err(|e| Error::EncodeError(format!("failed to remap: {}", e)))?;
+
+    // Convert palette to flat RGB format (3 bytes per color)
+    let mut palette_rgb = Vec::with_capacity(palette.len() * 3);
+    for color in palette {
+        palette_rgb.push(color.r);
+        palette_rgb.push(color.g);
+        palette_rgb.push(color.b);
     }
 
-    Ok((palette, indexed))
+    Ok((palette_rgb, indices))
 }
 
 #[cfg(test)]

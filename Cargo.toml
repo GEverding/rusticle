@@ -7,7 +7,7 @@ edition = "2021"
 gif = "0.13"
 thiserror = "1.0"
 tokio = { version = "1", features = ["rt", "io-util"], optional = true }
-color_quant = "1.1"
+imagequant = "4"
 fast_image_resize = "5"
 rayon = "1.10"
 
