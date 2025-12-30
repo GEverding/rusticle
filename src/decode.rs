@@ -4,6 +4,86 @@ use std::time::Duration;
 use crate::error::{Error, Result};
 use crate::types::{DisposalMethod, Frame, Gif, LoopCount, Palette};
 
+/// Composite a frame onto the canvas at the specified position.
+#[allow(clippy::too_many_arguments)]
+fn composite_frame(
+    canvas: &mut [u8],
+    frame_data: &[u8],
+    canvas_width: usize,
+    canvas_height: usize,
+    left: usize,
+    top: usize,
+    frame_width: usize,
+    frame_height: usize,
+) {
+    for y in 0..frame_height {
+        let canvas_y = top + y;
+        if canvas_y >= canvas_height {
+            break;
+        }
+
+        for x in 0..frame_width {
+            let canvas_x = left + x;
+            if canvas_x >= canvas_width {
+                break;
+            }
+
+            let frame_idx = (y * frame_width + x) * 4;
+            let canvas_idx = (canvas_y * canvas_width + canvas_x) * 4;
+
+            // Get frame pixel
+            let r = frame_data[frame_idx];
+            let g = frame_data[frame_idx + 1];
+            let b = frame_data[frame_idx + 2];
+            let a = frame_data[frame_idx + 3];
+
+            // Alpha blend onto canvas
+            if a == 255 {
+                // Fully opaque - replace
+                canvas[canvas_idx] = r;
+                canvas[canvas_idx + 1] = g;
+                canvas[canvas_idx + 2] = b;
+                canvas[canvas_idx + 3] = a;
+            } else if a > 0 {
+                // Partially transparent - blend
+                let bg_r = canvas[canvas_idx] as u16;
+                let bg_g = canvas[canvas_idx + 1] as u16;
+                let bg_b = canvas[canvas_idx + 2] as u16;
+                let bg_a = canvas[canvas_idx + 3] as u16;
+
+                let alpha = a as u16;
+                let inv_alpha = 255 - alpha;
+
+                canvas[canvas_idx] = ((r as u16 * alpha + bg_r * inv_alpha) / 255) as u8;
+                canvas[canvas_idx + 1] = ((g as u16 * alpha + bg_g * inv_alpha) / 255) as u8;
+                canvas[canvas_idx + 2] = ((b as u16 * alpha + bg_b * inv_alpha) / 255) as u8;
+                canvas[canvas_idx + 3] = ((alpha + bg_a * inv_alpha / 255).min(255)) as u8;
+            }
+            // If a == 0, leave canvas pixel unchanged
+        }
+    }
+}
+
+/// Clear a region of the canvas to transparent.
+fn clear_region(
+    canvas: &mut [u8],
+    canvas_width: usize,
+    left: usize,
+    top: usize,
+    width: usize,
+    height: usize,
+) {
+    for y in 0..height {
+        for x in 0..width {
+            let canvas_idx = ((top + y) * canvas_width + (left + x)) * 4;
+            canvas[canvas_idx] = 0;
+            canvas[canvas_idx + 1] = 0;
+            canvas[canvas_idx + 2] = 0;
+            canvas[canvas_idx + 3] = 0;
+        }
+    }
+}
+
 impl Gif {
     /// Decode a GIF from a byte slice.
     pub fn from_bytes(data: &[u8]) -> Result<Self> {
@@ -36,18 +116,20 @@ impl Gif {
 
         let mut frames = Vec::new();
 
+        // Canvas for compositing frames
+        let canvas_size = (width as usize) * (height as usize) * 4;
+        let mut canvas = vec![0u8; canvas_size];
+        let mut prev_canvas = vec![0u8; canvas_size];
+
         // Decode all frames
         while let Some(frame) = reader
             .read_next_frame()
             .map_err(|e| Error::DecodeError(e.to_string()))?
         {
-            let frame_width = frame.width;
-            let frame_height = frame.height;
-            let left = frame.left;
-            let top = frame.top;
-
-            // The gif crate with ColorOutput::RGBA gives us RGBA directly
-            let pixels = frame.buffer.to_vec();
+            let frame_width = frame.width as usize;
+            let frame_height = frame.height as usize;
+            let left = frame.left as usize;
+            let top = frame.top as usize;
 
             // Convert delay from 10ms units to Duration
             let delay = Duration::from_millis(frame.delay as u64 * 10);
@@ -69,16 +151,56 @@ impl Gif {
                 Palette { colors }
             });
 
+            // Save previous canvas state if disposal method is Previous
+            if dispose == DisposalMethod::Previous {
+                prev_canvas.copy_from_slice(&canvas);
+            }
+
+            // Composite frame onto canvas
+            composite_frame(
+                &mut canvas,
+                &frame.buffer,
+                width as usize,
+                height as usize,
+                left,
+                top,
+                frame_width,
+                frame_height,
+            );
+
+            // Store the composited canvas
             frames.push(Frame {
-                pixels,
+                pixels: canvas.clone(),
                 delay,
                 dispose,
                 local_palette,
-                left,
-                top,
-                width: frame_width,
-                height: frame_height,
+                left: 0,
+                top: 0,
+                width,
+                height,
             });
+
+            // Apply disposal method for next frame
+            match dispose {
+                DisposalMethod::Background => {
+                    // Clear the frame region to transparent
+                    clear_region(
+                        &mut canvas,
+                        width as usize,
+                        left,
+                        top,
+                        frame_width,
+                        frame_height,
+                    );
+                }
+                DisposalMethod::Previous => {
+                    // Restore to previous canvas state
+                    canvas.copy_from_slice(&prev_canvas);
+                }
+                _ => {
+                    // Keep or None - leave canvas as-is
+                }
+            }
         }
 
         Ok(Gif {

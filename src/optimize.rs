@@ -61,9 +61,10 @@ impl Gif {
 
     /// Lossy compression - mark "close enough" pixels as transparent.
     ///
-    /// Compares each frame to the previous and marks pixels that are within
-    /// a perceptual distance threshold as transparent. This allows the encoder
-    /// to skip storing those pixels, resulting in significant size reduction.
+    /// Compares each frame to the previous frame and marks pixels that are
+    /// within a perceptual distance threshold as transparent. This allows
+    /// the encoder to skip storing those pixels, resulting in significant
+    /// size reduction.
     ///
     /// Quality 100 is lossless (threshold 0). Lower quality values increase
     /// the threshold, making more pixels transparent and reducing file size.
@@ -90,19 +91,23 @@ impl Gif {
 
         // Calculate threshold: quality 100 = 0 (lossless), quality 0 = 255 (maximum loss)
         // Using 255/100 factor to map 0-100 to 0-255
-        let threshold = ((100 - quality as u16) * 255 / 100) as u8;
+        let threshold = ((100 - quality as u16) * 20 / 100) as u8;
 
-        let lossy_frames = self
+        // Compare each frame to the previous frame, like optimize does.
+        // This avoids error accumulation from maintaining a separate canvas
+        // that gets out of sync with actual encode/decode pixel values.
+        let lossy_frames: Vec<Frame> = self
             .frames
-            .par_iter()
+            .iter()
             .enumerate()
             .map(|(idx, frame)| {
                 if idx == 0 {
-                    // First frame is never lossy compressed
+                    // First frame: no optimization
                     frame.clone()
                 } else {
+                    // Compare to previous frame
                     let prev_frame = &self.frames[idx - 1];
-                    apply_lossy_frame(frame, prev_frame, threshold)
+                    apply_lossy_frame(frame, &prev_frame.pixels, threshold)
                 }
             })
             .collect();
@@ -149,7 +154,11 @@ fn optimize_frame(frame: &Frame, prev_frame: &Frame, threshold: u8, level: OptLe
             ];
 
             if pixels_similar(&curr, &prev, threshold) {
-                // Mark as transparent
+                // Mark as transparent - set RGB to black so all transparent pixels
+                // map to the same palette entry during quantization
+                optimized.pixels[pixel_idx] = 0;
+                optimized.pixels[pixel_idx + 1] = 0;
+                optimized.pixels[pixel_idx + 2] = 0;
                 optimized.pixels[pixel_idx + 3] = 0;
             }
         }
@@ -172,16 +181,10 @@ fn optimize_frame(frame: &Frame, prev_frame: &Frame, threshold: u8, level: OptLe
 
 /// Apply lossy compression to a single frame.
 ///
-/// Marks pixels that are "close enough" to the previous frame as transparent,
+/// Marks pixels that are "close enough" to the canvas state as transparent,
 /// using perceptual color distance with weighted RGB channels.
-fn apply_lossy_frame(frame: &Frame, prev_frame: &Frame, threshold: u8) -> Frame {
+fn apply_lossy_frame(frame: &Frame, canvas: &[u8], threshold: u8) -> Frame {
     let mut lossy = frame.clone();
-
-    // Only apply if frames have compatible dimensions
-    if frame.width != prev_frame.width || frame.height != prev_frame.height {
-        lossy.dispose = DisposalMethod::Keep;
-        return lossy;
-    }
 
     let width = frame.width as usize;
     let height = frame.height as usize;
@@ -190,22 +193,26 @@ fn apply_lossy_frame(frame: &Frame, prev_frame: &Frame, threshold: u8) -> Frame 
     // Mark "close enough" pixels as transparent
     for i in 0..pixel_count {
         let pixel_idx = i * 4;
-        if pixel_idx + 3 < lossy.pixels.len() && pixel_idx + 3 < prev_frame.pixels.len() {
+        if pixel_idx + 3 < lossy.pixels.len() && pixel_idx + 3 < canvas.len() {
             let curr = [
                 lossy.pixels[pixel_idx],
                 lossy.pixels[pixel_idx + 1],
                 lossy.pixels[pixel_idx + 2],
                 lossy.pixels[pixel_idx + 3],
             ];
-            let prev = [
-                prev_frame.pixels[pixel_idx],
-                prev_frame.pixels[pixel_idx + 1],
-                prev_frame.pixels[pixel_idx + 2],
-                prev_frame.pixels[pixel_idx + 3],
+            let canvas_pixel = [
+                canvas[pixel_idx],
+                canvas[pixel_idx + 1],
+                canvas[pixel_idx + 2],
+                canvas[pixel_idx + 3],
             ];
 
-            if colors_similar(&curr, &prev, threshold) {
-                // Mark as transparent
+            if pixels_similar(&curr, &canvas_pixel, threshold) {
+                // Mark as transparent - set RGB to black so all transparent pixels
+                // map to the same palette entry during quantization
+                lossy.pixels[pixel_idx] = 0;
+                lossy.pixels[pixel_idx + 1] = 0;
+                lossy.pixels[pixel_idx + 2] = 0;
                 lossy.pixels[pixel_idx + 3] = 0;
             }
         }
@@ -233,6 +240,7 @@ fn pixels_similar(a: &[u8; 4], b: &[u8; 4], threshold: u8) -> bool {
 /// - G: weight 0.5
 /// - B: weight 0.2
 #[inline]
+#[allow(dead_code)]
 fn colors_similar(a: &[u8; 4], b: &[u8; 4], threshold: u8) -> bool {
     // Ignore alpha channel for color comparison
     let dr = a[0].abs_diff(b[0]) as u32;
@@ -524,8 +532,11 @@ mod tests {
 
     #[test]
     fn test_lossy_threshold_calculation() {
+        // New formula: threshold = (100 - quality) * 20 / 100
+        // quality 80 = 4, quality 50 = 10, quality 0 = 20
+        
         let frame1 = make_frame(1, 1, [128, 128, 128, 255]);
-        let frame2 = make_frame(1, 1, [138, 128, 128, 255]); // +10 red
+        let frame2 = make_frame(1, 1, [130, 128, 128, 255]); // +2 red
 
         let gif = Gif {
             width: 1,
@@ -535,20 +546,20 @@ mod tests {
             loop_count: crate::types::LoopCount::Infinite,
         };
 
-        // Quality 80: threshold = (100-80)*255/100 = 51
-        // Red diff: 10*3/10 = 3, should be transparent
+        // Quality 80: threshold = 4
+        // Red diff: 2, should be transparent (2 <= 4)
         let lossy = gif.clone().lossy(80);
         assert_eq!(
             lossy.frames[1].pixels[3], 0,
-            "Pixel should be transparent at quality 80"
+            "Pixel should be transparent at quality 80 (diff 2 <= threshold 4)"
         );
 
-        // Quality 99: threshold = (100-99)*255/100 = 2
-        // Red diff: 10*3/10 = 3, should NOT be transparent
-        let lossy = gif.lossy(99);
+        // Quality 95: threshold = 1
+        // Red diff: 2, should NOT be transparent (2 > 1)
+        let lossy = gif.lossy(95);
         assert_eq!(
             lossy.frames[1].pixels[3], 255,
-            "Pixel should be opaque at quality 99"
+            "Pixel should be opaque at quality 95 (diff 2 > threshold 1)"
         );
     }
 }

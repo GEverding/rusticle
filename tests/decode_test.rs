@@ -14,3 +14,40 @@ fn test_decode_from_read() {
     let result = Gif::from_read(data);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_compositing_produces_full_frames() {
+    // Load a real GIF and verify frames are composited to full canvas size
+    let data = std::fs::read("outputs/original_test3.gif").expect("test file should exist");
+    let gif = Gif::from_bytes(&data).expect("should decode");
+
+    // All frames should now be full canvas size (composited)
+    for (i, frame) in gif.frames.iter().enumerate() {
+        assert_eq!(
+            frame.width, gif.width,
+            "Frame {} width should match canvas width after compositing",
+            i
+        );
+        assert_eq!(
+            frame.height, gif.height,
+            "Frame {} height should match canvas height after compositing",
+            i
+        );
+        assert_eq!(
+            frame.left, 0,
+            "Frame {} should be at left=0 after compositing",
+            i
+        );
+        assert_eq!(
+            frame.top, 0,
+            "Frame {} should be at top=0 after compositing",
+            i
+        );
+        assert_eq!(
+            frame.pixels.len(),
+            (gif.width as usize) * (gif.height as usize) * 4,
+            "Frame {} should have full canvas pixel data",
+            i
+        );
+    }
+}

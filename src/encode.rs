@@ -55,7 +55,7 @@ fn encode_frame<W: Write>(
     frame: &crate::types::Frame,
 ) -> Result<()> {
     // Quantize RGBA to indexed color
-    let (palette, indexed) =
+    let (palette, indexed, transparent_idx) =
         quantize_rgba(&frame.pixels, frame.width as usize, frame.height as usize)?;
 
     // Convert delay from Duration to gif units (10ms increments)
@@ -81,6 +81,11 @@ fn encode_frame<W: Write>(
     // Set the palette on the frame
     gif_frame.palette = Some(palette);
 
+    // Set transparent index if we have transparent pixels
+    if let Some(idx) = transparent_idx {
+        gif_frame.transparent = Some(idx);
+    }
+
     gif_frame.delay = delay_units;
     gif_frame.dispose = disposal;
     gif_frame.left = frame.left;
@@ -94,7 +99,12 @@ fn encode_frame<W: Write>(
 }
 
 /// Quantize RGBA pixels to indexed color using imagequant.
-fn quantize_rgba(rgba_pixels: &[u8], width: usize, height: usize) -> Result<(Vec<u8>, Vec<u8>)> {
+/// Returns (palette, indices, transparent_index).
+fn quantize_rgba(
+    rgba_pixels: &[u8],
+    width: usize,
+    height: usize,
+) -> Result<(Vec<u8>, Vec<u8>, Option<u8>)> {
     if rgba_pixels.len() != width * height * 4 {
         return Err(Error::EncodeError(format!(
             "pixel data size mismatch: expected {}, got {}",
@@ -141,6 +151,15 @@ fn quantize_rgba(rgba_pixels: &[u8], width: usize, height: usize) -> Result<(Vec
         .remapped(&mut img)
         .map_err(|e| Error::EncodeError(format!("failed to remap: {}", e)))?;
 
+    // Find transparent color index (alpha < 128)
+    let mut transparent_idx = None;
+    for (i, color) in palette.iter().enumerate() {
+        if color.a < 128 {
+            transparent_idx = Some(i as u8);
+            break;
+        }
+    }
+
     // Convert palette to flat RGB format (3 bytes per color)
     let mut palette_rgb = Vec::with_capacity(palette.len() * 3);
     for color in palette {
@@ -149,7 +168,7 @@ fn quantize_rgba(rgba_pixels: &[u8], width: usize, height: usize) -> Result<(Vec
         palette_rgb.push(color.b);
     }
 
-    Ok((palette_rgb, indices))
+    Ok((palette_rgb, indices, transparent_idx))
 }
 
 #[cfg(test)]
@@ -167,7 +186,7 @@ mod tests {
 
         let result = quantize_rgba(&rgba_pixels, 2, 2);
         assert!(result.is_ok(), "Should quantize valid RGBA data");
-        let (palette, indexed) = result.unwrap();
+        let (palette, indexed, _) = result.unwrap();
         assert!(!palette.is_empty(), "Palette should not be empty");
         assert_eq!(indexed.len(), 4, "Indexed data should have 4 pixels");
     }
@@ -184,7 +203,7 @@ mod tests {
         let rgba_pixels = vec![128, 64, 32, 255];
         let result = quantize_rgba(&rgba_pixels, 1, 1);
         assert!(result.is_ok(), "Should quantize single pixel");
-        let (palette, indexed) = result.unwrap();
+        let (palette, indexed, _) = result.unwrap();
         assert!(!palette.is_empty(), "Palette should not be empty");
         assert_eq!(indexed.len(), 1, "Indexed data should have 1 pixel");
     }
@@ -201,8 +220,28 @@ mod tests {
         }
         let result = quantize_rgba(&rgba_pixels, 10, 10);
         assert!(result.is_ok(), "Should quantize large image");
-        let (palette, indexed) = result.unwrap();
+        let (palette, indexed, _) = result.unwrap();
         assert!(!palette.is_empty(), "Palette should not be empty");
         assert_eq!(indexed.len(), 100, "Indexed data should have 100 pixels");
+    }
+
+    #[test]
+    fn test_quantize_rgba_with_transparency() {
+        let rgba_pixels = vec![
+            255, 0, 0, 255, // Red (opaque)
+            0, 255, 0, 0, // Green (fully transparent)
+            0, 0, 255, 255, // Blue (opaque)
+            255, 255, 0, 0, // Yellow (fully transparent)
+        ];
+
+        let result = quantize_rgba(&rgba_pixels, 2, 2);
+        assert!(result.is_ok(), "Should quantize data with transparency");
+        let (palette, indexed, transparent_idx) = result.unwrap();
+        assert!(!palette.is_empty(), "Palette should not be empty");
+        assert_eq!(indexed.len(), 4, "Indexed data should have 4 pixels");
+        assert!(
+            transparent_idx.is_some(),
+            "Should have transparent index for transparent pixels"
+        );
     }
 }
