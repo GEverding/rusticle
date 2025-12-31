@@ -217,14 +217,22 @@ fn bench_diff_bbox_medium(c: &mut Criterion) {
 }
 
 fn bench_diff_bbox_large(c: &mut Criterion) {
-    // 640x480 frame, full diff
+    // 640x480 frame, diff in bottom-right corner (worst case - full scan)
     let width = 640;
     let height = 480;
     let size = width * height * 4;
-    let prev: Vec<u8> = (0..size).map(|i| (i % 256) as u8).collect();
-    let curr: Vec<u8> = (0..size).map(|i| ((i + 1) % 256) as u8).collect();
+    let prev: Vec<u8> = vec![128; size];
+    let mut curr = prev.clone();
 
-    c.bench_function("diff_bbox_640x480_full", |b| {
+    // Change only bottom-right 10x10 region
+    for y in (height - 10)..height {
+        for x in (width - 10)..width {
+            let idx = (y * width + x) * 4;
+            curr[idx] = 255;
+        }
+    }
+
+    c.bench_function("diff_bbox_640x480_bottom_right", |b| {
         b.iter(|| find_diff_bounding_box(&prev, &curr, width, height, 0))
     });
 }
