@@ -152,7 +152,7 @@ fn bench_simd_pixel_compare(c: &mut Criterion) {
     let size = 160_000;
     let prev: Vec<u8> = (0..size).map(|i| ((i * 7) % 256) as u8).collect();
     let curr_orig: Vec<u8> = (0..size).map(|i| ((i * 7 + 2) % 256) as u8).collect();
-    
+
     c.bench_function("simd_pixel_compare_200x200", |b| {
         b.iter(|| {
             let mut curr = curr_orig.clone();
@@ -165,7 +165,7 @@ fn bench_scalar_pixel_compare(c: &mut Criterion) {
     let size = 160_000;
     let prev: Vec<u8> = (0..size).map(|i| ((i * 7) % 256) as u8).collect();
     let curr_orig: Vec<u8> = (0..size).map(|i| ((i * 7 + 2) % 256) as u8).collect();
-    
+
     c.bench_function("scalar_pixel_compare_200x200", |b| {
         b.iter(|| {
             let mut curr = curr_orig.clone();

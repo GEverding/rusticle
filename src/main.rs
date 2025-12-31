@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.len() < 3 {
         eprintln!("Usage: rusticle <operation> <input.gif> [output.gif]");
         eprintln!("Operations: resize, optimize, lossy, all, quality");
-        eprintln!("");
+        eprintln!();
         eprintln!("quality: rusticle quality <original.gif> <processed.gif>");
         std::process::exit(1);
     }
