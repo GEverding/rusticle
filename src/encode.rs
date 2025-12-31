@@ -5,6 +5,25 @@ use crate::palette_lut::PaletteLut;
 use crate::types::{DisposalMethod, Gif};
 use rayon::prelude::*;
 use std::io::Write;
+use std::sync::OnceLock;
+use std::time::Instant;
+
+/// Statistics from GIF encoding, measuring time spent in each stage.
+#[derive(Debug, Clone, Default)]
+pub struct EncodeStats {
+    /// Time spent building the palette LUT (nanoseconds).
+    pub lut_build_ns: u64,
+    /// Total time spent quantizing all frames (nanoseconds).
+    pub quantize_ns: u64,
+    /// Number of frames that used the fast path (LUT-based quantization).
+    pub quantize_fast_path_count: usize,
+    /// Number of frames that used imagequant (full quantization).
+    pub quantize_imagequant_count: usize,
+    /// Total time spent writing quantized frames to GIF (nanoseconds).
+    pub write_ns: u64,
+    /// Total encode time (nanoseconds).
+    pub total_ns: u64,
+}
 
 /// Intermediate representation of a quantized frame.
 struct QuantizedFrame {
@@ -18,6 +37,9 @@ struct QuantizedFrame {
     width: u16,
     height: u16,
 }
+
+/// Result of quantizing a frame: (palette, indices, transparent_index, used_fast_path).
+type QuantizeResult = (Vec<u8>, Vec<u8>, Option<u8>, bool);
 
 impl Gif {
     /// Encode to bytes (convenience method).
@@ -45,6 +67,20 @@ impl Gif {
 
     pub fn into_bytes(self) -> Result<Vec<u8>> {
         self.to_bytes()
+    }
+
+    /// Encode to bytes and return timing statistics.
+    ///
+    /// # Errors
+    /// Returns `Error::EncodeError` if encoding fails.
+    pub fn to_bytes_with_stats(&self) -> Result<(Vec<u8>, EncodeStats)> {
+        let total_start = Instant::now();
+        let mut buffer = Vec::new();
+        let stats = self.encode_to_with_stats(&mut buffer)?;
+        let bytes = buffer;
+        let mut stats = stats;
+        stats.total_ns = total_start.elapsed().as_nanos() as u64;
+        Ok((bytes, stats))
     }
 
     /// Encode to any Write implementation.
@@ -79,6 +115,60 @@ impl Gif {
 
         Ok(())
     }
+
+    /// Encode to any Write implementation with timing statistics.
+    pub fn encode_to_with_stats<W: Write>(&self, writer: W) -> Result<EncodeStats> {
+        let mut stats = EncodeStats::default();
+        let mut encoder = gif::Encoder::new(writer, self.width, self.height, &[])
+            .map_err(|e| Error::EncodeError(format!("failed to create encoder: {}", e)))?;
+
+        // Set loop count
+        let repeat = match self.loop_count {
+            crate::types::LoopCount::Infinite => gif::Repeat::Infinite,
+            crate::types::LoopCount::Finite(n) => gif::Repeat::Finite(n),
+        };
+        encoder
+            .set_repeat(repeat)
+            .map_err(|e| Error::EncodeError(format!("failed to set repeat: {}", e)))?;
+
+        // Build LUT once if we have original palette
+        let lut_start = Instant::now();
+        let lut = self.original_palette.as_ref().map(|p| PaletteLut::new(p));
+        if self.original_palette.is_some() {
+            stats.lut_build_ns = lut_start.elapsed().as_nanos() as u64;
+        }
+        let lut_ref = lut.as_ref();
+
+        // Quantize all frames in parallel (expensive part)
+        let quantize_start = Instant::now();
+        let quantized_frames: Vec<(QuantizedFrame, bool)> = self
+            .frames
+            .par_iter()
+            .map(|frame| {
+                let (qframe, used_fast_path) = quantize_frame_parallel_with_stats(frame, lut_ref)?;
+                Ok((qframe, used_fast_path))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        stats.quantize_ns = quantize_start.elapsed().as_nanos() as u64;
+
+        // Count fast path vs imagequant
+        for (_, used_fast_path) in &quantized_frames {
+            if *used_fast_path {
+                stats.quantize_fast_path_count += 1;
+            } else {
+                stats.quantize_imagequant_count += 1;
+            }
+        }
+
+        // Write quantized frames sequentially (GIF format requires order)
+        let write_start = Instant::now();
+        for (qframe, _) in quantized_frames {
+            write_quantized_frame(&mut encoder, &qframe)?;
+        }
+        stats.write_ns = write_start.elapsed().as_nanos() as u64;
+
+        Ok(stats)
+    }
 }
 
 /// Quantize a frame in parallel context (no encoder access).
@@ -105,6 +195,35 @@ fn quantize_frame_parallel(
         width: frame.width,
         height: frame.height,
     })
+}
+
+/// Quantize a frame in parallel context with tracking of fast path usage.
+fn quantize_frame_parallel_with_stats(
+    frame: &crate::types::Frame,
+    lut: Option<&PaletteLut>,
+) -> Result<(QuantizedFrame, bool)> {
+    // Quantize RGBA to indexed color
+    let (palette, indexed, transparent_idx, used_fast_path) = quantize_rgba_with_stats(
+        &frame.pixels,
+        frame.width as usize,
+        frame.height as usize,
+        lut,
+    )?;
+
+    Ok((
+        QuantizedFrame {
+            palette,
+            indices: indexed,
+            transparent_idx,
+            delay: frame.delay,
+            dispose: frame.dispose,
+            left: frame.left,
+            top: frame.top,
+            width: frame.width,
+            height: frame.height,
+        },
+        used_fast_path,
+    ))
 }
 
 /// Write a pre-quantized frame to the encoder (sequential).
@@ -152,10 +271,49 @@ fn write_quantized_frame<W: Write>(
     Ok(())
 }
 
+/// Check if diagnostic logging is enabled via RUSTICLE_DEBUG env var.
+fn debug_enabled() -> bool {
+    static DEBUG: OnceLock<bool> = OnceLock::new();
+    *DEBUG.get_or_init(|| std::env::var("RUSTICLE_DEBUG").is_ok())
+}
+
 /// Try to encode frame using pre-built palette LUT.
 /// Returns None if quality is unacceptable (fallback to full quantization).
 fn try_fast_encode(rgba_pixels: &[u8], lut: &PaletteLut) -> Option<(Vec<u8>, Vec<u8>)> {
     let (indices, stats) = lut.map_buffer(rgba_pixels);
+
+    // Diagnostic logging when RUSTICLE_DEBUG is set
+    if debug_enabled() {
+        let accepted = stats.is_acceptable();
+        eprintln!(
+            "[fast_path] pixels={} accepted={} avg_dist={:.1} outliers={:.2}% util={:.2}%",
+            rgba_pixels.len() / 4,
+            accepted,
+            stats.avg_distance_sq,
+            stats.outlier_ratio * 100.0,
+            stats.palette_utilization * 100.0
+        );
+        if !accepted {
+            // Show which threshold(s) failed
+            let mut reasons = Vec::new();
+            if stats.avg_distance_sq >= 150.0 {
+                reasons.push(format!("avg_dist {:.1} >= 150", stats.avg_distance_sq));
+            }
+            if stats.outlier_ratio >= 0.05 {
+                reasons.push(format!(
+                    "outliers {:.1}% >= 5%",
+                    stats.outlier_ratio * 100.0
+                ));
+            }
+            if stats.palette_utilization <= 0.3 {
+                reasons.push(format!(
+                    "util {:.1}% <= 30%",
+                    stats.palette_utilization * 100.0
+                ));
+            }
+            eprintln!("[fast_path] rejected: {}", reasons.join(", "));
+        }
+    }
 
     if !stats.is_acceptable() {
         return None; // Quality too low, fallback
@@ -172,7 +330,8 @@ fn try_fast_encode(rgba_pixels: &[u8], lut: &PaletteLut) -> Option<(Vec<u8>, Vec
 }
 
 /// Find transparent index and remap transparent pixels to a dedicated palette entry.
-/// This ensures transparent pixels don't share an index with opaque pixels.
+/// Prefers index 0 for transparency (GIF convention, better LZW compression).
+/// If index 0 is used by opaque pixels, swaps palette entries to free it.
 fn find_transparent_index_and_remap(
     rgba_pixels: &[u8],
     indices: &mut [u8],
@@ -187,6 +346,11 @@ fn find_transparent_index_and_remap(
 
     let palette_len = palette.len() / 3;
 
+    // Guard against empty palette
+    if palette_len == 0 {
+        return None;
+    }
+
     // Count usage of each palette index by OPAQUE pixels only
     let mut opaque_usage = vec![0usize; palette_len];
     for (i, pixel) in rgba_pixels.chunks_exact(4).enumerate() {
@@ -195,26 +359,60 @@ fn find_transparent_index_and_remap(
         }
     }
 
-    // Find an index not used by any opaque pixel, or add a new entry
-    let transparent_idx = if let Some(unused) = opaque_usage.iter().position(|&count| count == 0) {
-        // Found an unused index - perfect for transparency
-        unused as u8
-    } else if palette_len < 256 {
-        // Add a new palette entry for transparency
-        palette.extend_from_slice(&[0, 0, 0]);
-        palette_len as u8
+    // Prefer index 0 for transparency (GIF convention, better LZW compression)
+    let transparent_idx = if opaque_usage[0] == 0 {
+        // Index 0 is unused by opaque pixels - perfect!
+        0
     } else {
-        // All 256 indices used - find least used by opaque pixels
-        // This is a fallback that may cause some visual artifacts
-        opaque_usage
-            .iter()
-            .enumerate()
-            .min_by_key(|(_, &count)| count)
-            .map(|(idx, _)| idx as u8)
-            .unwrap_or(255)
+        // Index 0 is used - find an unused index to swap with
+        if let Some(unused_offset) = opaque_usage.iter().skip(1).position(|&count| count == 0) {
+            let swap_idx = (unused_offset + 1) as u8; // +1 because we skipped index 0
+
+            // Swap palette entries: palette[0] <-> palette[swap_idx]
+            let swap_offset = (swap_idx as usize) * 3;
+            let (r0, g0, b0) = (palette[0], palette[1], palette[2]);
+            palette[0] = palette[swap_offset];
+            palette[1] = palette[swap_offset + 1];
+            palette[2] = palette[swap_offset + 2];
+            palette[swap_offset] = r0;
+            palette[swap_offset + 1] = g0;
+            palette[swap_offset + 2] = b0;
+
+            // Remap indices: 0 <-> swap_idx
+            for idx in indices.iter_mut() {
+                if *idx == 0 {
+                    *idx = swap_idx;
+                } else if *idx == swap_idx {
+                    *idx = 0;
+                }
+            }
+            0
+        } else if palette_len < 256 {
+            // No unused index - add new entry and swap with index 0
+            let new_idx = palette_len as u8;
+
+            // Copy index 0's color to new slot
+            palette.extend_from_slice(&[palette[0], palette[1], palette[2]]);
+
+            // Remap: all index 0 -> new_idx
+            for idx in indices.iter_mut() {
+                if *idx == 0 {
+                    *idx = new_idx;
+                }
+            }
+            0
+        } else {
+            // Full palette, all used - find least used as fallback
+            opaque_usage
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, &count)| count)
+                .map(|(idx, _)| idx as u8)
+                .unwrap_or(0)
+        }
     };
 
-    // Remap all transparent pixels to use the dedicated transparent index
+    // Remap all transparent pixels to use the transparent index
     for (i, pixel) in rgba_pixels.chunks_exact(4).enumerate() {
         if pixel[3] < 128 {
             indices[i] = transparent_idx;
@@ -302,6 +500,84 @@ fn quantize_rgba(
     Ok((palette_rgb, indices, transparent_idx))
 }
 
+/// Quantize RGBA pixels to indexed color with tracking of fast path usage.
+/// Returns (palette, indices, transparent_index, used_fast_path).
+fn quantize_rgba_with_stats(
+    rgba_pixels: &[u8],
+    width: usize,
+    height: usize,
+    lut: Option<&PaletteLut>,
+) -> Result<QuantizeResult> {
+    if rgba_pixels.len() != width * height * 4 {
+        return Err(Error::EncodeError(format!(
+            "pixel data size mismatch: expected {}, got {}",
+            width * height * 4,
+            rgba_pixels.len()
+        )));
+    }
+
+    // Try fast path if we have pre-built LUT
+    if let Some(lut) = lut {
+        if let Some((mut palette_rgb, mut indices)) = try_fast_encode(rgba_pixels, lut) {
+            let transparent_idx =
+                find_transparent_index_and_remap(rgba_pixels, &mut indices, &mut palette_rgb);
+            return Ok((palette_rgb, indices, transparent_idx, true));
+        }
+    }
+
+    // Convert raw bytes to RGBA structs
+    let rgba_data: Vec<imagequant::RGBA> = rgba_pixels
+        .chunks_exact(4)
+        .map(|chunk| imagequant::RGBA {
+            r: chunk[0],
+            g: chunk[1],
+            b: chunk[2],
+            a: chunk[3],
+        })
+        .collect();
+
+    // Create imagequant attributes
+    let mut attr = imagequant::Attributes::new();
+    attr.set_max_colors(256)
+        .map_err(|e| Error::EncodeError(format!("failed to set max colors: {}", e)))?;
+    attr.set_quality(0, 100)
+        .map_err(|e| Error::EncodeError(format!("failed to set quality: {}", e)))?;
+
+    // Create image from RGBA pixels
+    let mut img = attr
+        .new_image_borrowed(&rgba_data, width, height, 0.0)
+        .map_err(|e| Error::EncodeError(format!("failed to create image: {}", e)))?;
+
+    // Quantize
+    let mut result = attr
+        .quantize(&mut img)
+        .map_err(|e| Error::EncodeError(format!("failed to quantize: {}", e)))?;
+
+    // Enable dithering for better visual quality
+    result
+        .set_dithering_level(1.0)
+        .map_err(|e| Error::EncodeError(format!("failed to set dithering: {}", e)))?;
+
+    // Remap pixels to palette indices
+    let (palette, mut indices) = result
+        .remapped(&mut img)
+        .map_err(|e| Error::EncodeError(format!("failed to remap: {}", e)))?;
+
+    // Convert palette to flat RGB format
+    let mut palette_rgb = Vec::with_capacity(palette.len() * 3);
+    for color in palette {
+        palette_rgb.push(color.r);
+        palette_rgb.push(color.g);
+        palette_rgb.push(color.b);
+    }
+
+    // Handle transparency - find/create dedicated index for transparent pixels
+    let transparent_idx =
+        find_transparent_index_and_remap(rgba_pixels, &mut indices, &mut palette_rgb);
+
+    Ok((palette_rgb, indices, transparent_idx, false))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -386,5 +662,62 @@ mod tests {
             transparent_idx.is_none(),
             "Should not have transparent index"
         );
+    }
+
+    #[test]
+    fn test_find_transparent_index_prefers_zero() {
+        // Test that index 0 is preferred when unused by opaque pixels
+        let rgba_pixels = vec![
+            255, 0, 0, 255, // Red, opaque
+            0, 255, 0, 255, // Green, opaque
+            0, 0, 255, 0, // Blue, transparent
+            255, 255, 0, 255, // Yellow, opaque
+        ];
+
+        // Create a palette where index 0 is unused by opaque pixels
+        let mut palette = vec![
+            100, 100, 100, // Index 0 - unused by opaque
+            255, 0, 0, // Index 1 - red
+            0, 255, 0, // Index 2 - green
+            255, 255, 0, // Index 3 - yellow
+        ];
+        let mut indices = vec![1, 2, 3, 3]; // Opaque pixels use indices 1,2,3
+
+        let result = find_transparent_index_and_remap(&rgba_pixels, &mut indices, &mut palette);
+
+        // Should prefer index 0 for transparency
+        assert_eq!(result, Some(0), "Should prefer index 0 for transparency");
+        // Transparent pixel should be remapped to 0
+        assert_eq!(indices[2], 0, "Transparent pixel should use index 0");
+    }
+
+    #[test]
+    fn test_find_transparent_index_swaps_when_zero_used() {
+        // Test that palette is swapped when index 0 is used by opaque pixels
+        let rgba_pixels = vec![
+            255, 0, 0, 255, // Red, opaque
+            0, 255, 0, 255, // Green, opaque
+            0, 0, 255, 0, // Blue, transparent
+            255, 255, 0, 255, // Yellow, opaque
+        ];
+
+        // Create a palette where index 0 IS used by opaque pixels
+        let mut palette = vec![
+            255, 0, 0, // Index 0 - red (used by opaque)
+            100, 100, 100, // Index 1 - unused
+            0, 255, 0, // Index 2 - green
+            255, 255, 0, // Index 3 - yellow
+        ];
+        let mut indices = vec![0, 2, 3, 3]; // Opaque pixels use indices 0,2,3
+
+        let result = find_transparent_index_and_remap(&rgba_pixels, &mut indices, &mut palette);
+
+        // Should still prefer index 0 for transparency (after swapping)
+        assert_eq!(result, Some(0), "Should prefer index 0 for transparency");
+        // Transparent pixel should be remapped to 0
+        assert_eq!(indices[2], 0, "Transparent pixel should use index 0");
+        // Index 0 should now have the color that was at index 1 (or swapped)
+        // The important thing is that opaque pixels were remapped correctly
+        assert_eq!(indices[0], 1, "Opaque pixel at index 0 should be remapped");
     }
 }

@@ -122,6 +122,10 @@ impl PaletteLut {
     ///
     /// Returns (indices, quality stats).
     ///
+    /// Quality stats only consider opaque pixels (alpha >= 128).
+    /// Transparent pixels are mapped but excluded from distance calculations,
+    /// since they'll be remapped to a dedicated index later.
+    ///
     /// # Panics
     /// Panics if `rgba.len()` is not divisible by 4.
     pub fn map_buffer(&self, rgba: &[u8]) -> (Vec<u8>, PaletteMapStats) {
@@ -132,26 +136,43 @@ impl PaletteLut {
         let mut max_dist: u32 = 0;
         let mut outliers: usize = 0;
         let mut used_colors = [false; 256];
+        let mut opaque_count: usize = 0;
 
         for pixel in rgba.chunks_exact(4) {
             let (idx, dist) = self.map_with_distance(pixel[0], pixel[1], pixel[2]);
             indices.push(idx);
 
-            total_dist += dist as u64;
-            max_dist = max_dist.max(dist);
-            if dist > 2500 {
-                // sqrt(2500) = 50 color distance
-                outliers += 1;
+            // Only count opaque pixels (alpha >= 128) for quality stats.
+            // Transparent pixels will be remapped to a dedicated index later.
+            if pixel[3] >= 128 {
+                total_dist += dist as u64;
+                max_dist = max_dist.max(dist);
+                if dist > 2500 {
+                    // sqrt(2500) = 50 color distance
+                    outliers += 1;
+                }
+                used_colors[idx as usize] = true;
+                opaque_count += 1;
             }
-            used_colors[idx as usize] = true;
         }
 
-        let stats = PaletteMapStats {
-            avg_distance_sq: total_dist as f64 / pixel_count as f64,
-            max_distance_sq: max_dist,
-            outlier_ratio: outliers as f64 / pixel_count as f64,
-            palette_utilization: used_colors.iter().filter(|&&x| x).count() as f64
-                / self.palette.len() as f64,
+        // Avoid division by zero if all pixels are transparent
+        let stats = if opaque_count > 0 {
+            PaletteMapStats {
+                avg_distance_sq: total_dist as f64 / opaque_count as f64,
+                max_distance_sq: max_dist,
+                outlier_ratio: outliers as f64 / opaque_count as f64,
+                palette_utilization: used_colors.iter().filter(|&&x| x).count() as f64
+                    / self.palette.len() as f64,
+            }
+        } else {
+            // All pixels transparent - fast path is fine (will all be remapped)
+            PaletteMapStats {
+                avg_distance_sq: 0.0,
+                max_distance_sq: 0,
+                outlier_ratio: 0.0,
+                palette_utilization: 0.0,
+            }
         };
 
         (indices, stats)
