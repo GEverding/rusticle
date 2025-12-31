@@ -117,3 +117,48 @@ ls -lh /tmp/out.gif /tmp/g.gif
 | Full pipeline | **4.7-6.2x** |
 
 Plus: output files are often **smaller** than gifsicle.
+
+## Quality Metrics Comparison
+
+Comparing resize quality using PSNR (Peak Signal-to-Noise Ratio) and SSIM (Structural Similarity Index).
+
+### Methodology
+
+1. Resize original to 320x240 as reference
+2. Compare reference to tool's output
+3. Higher PSNR/SSIM = closer to reference resize
+
+### Results
+
+| Test File | Tool | Avg PSNR | Avg SSIM | Output Size | Verdict |
+|-----------|------|----------|----------|-------------|---------|
+| cartoon_01 (fast path) | rusticle | 31.9 dB | 0.983 | 1.16 MB | GOOD |
+| cartoon_01 | gifsicle | **40.5 dB** | **0.999** | 1.35 MB | EXCELLENT |
+| photo_01 (fast path) | rusticle | 36.9 dB | 0.998 | 1.88 MB | GOOD |
+| photo_01 | gifsicle | **38.8 dB** | **0.998** | 2.46 MB | GOOD |
+| test3 (imagequant) | rusticle | 34.7 dB | 0.996 | 8.92 MB | GOOD |
+| test3 | gifsicle | **37.2 dB** | **0.997** | 8.38 MB | GOOD |
+
+### Interpretation
+
+**Quality thresholds:**
+- EXCELLENT: PSNR ≥ 40 dB, SSIM ≥ 0.95
+- GOOD: PSNR ≥ 30 dB, SSIM ≥ 0.90
+- ACCEPTABLE: PSNR ≥ 25 dB, SSIM ≥ 0.80
+
+**Key findings:**
+- gifsicle produces ~2-8 dB higher PSNR
+- Both tools achieve "GOOD" quality on all tests
+- rusticle's fast path trades ~5 dB PSNR for **4.9x speed**
+- rusticle often produces **smaller files** despite lower PSNR
+
+### The Tradeoff
+
+| Metric | rusticle (fast path) | gifsicle |
+|--------|---------------------|----------|
+| Speed | **4.9x faster** | baseline |
+| PSNR | ~5 dB lower | higher |
+| File size | often smaller | larger |
+| Quality rating | GOOD | EXCELLENT |
+
+For most use cases (web thumbnails, previews, caching), GOOD quality at 4.9x speed is the right tradeoff.
