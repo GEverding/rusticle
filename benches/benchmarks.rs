@@ -145,7 +145,9 @@ criterion_group!(
 criterion_main!(benches, simd_benches);
 
 // SIMD vs scalar benchmarks
-use rusticle::simd_opt::{mark_unchanged_pixels_scalar, mark_unchanged_pixels_simd};
+use rusticle::simd_opt::{
+    find_diff_bounding_box, mark_unchanged_pixels_scalar, mark_unchanged_pixels_simd,
+};
 
 fn bench_simd_pixel_compare(c: &mut Criterion) {
     // 200x200 = 40000 pixels = 160000 bytes
@@ -174,8 +176,78 @@ fn bench_scalar_pixel_compare(c: &mut Criterion) {
     });
 }
 
+fn bench_diff_bbox_small(c: &mut Criterion) {
+    // 100x100 frame, small diff in center
+    let width = 100;
+    let height = 100;
+    let size = width * height * 4;
+    let prev: Vec<u8> = vec![128; size];
+    let mut curr = prev.clone();
+    // Change center 10x10 region
+    for y in 45..55 {
+        for x in 45..55 {
+            let idx = (y * width + x) * 4;
+            curr[idx] = 255;
+        }
+    }
+
+    c.bench_function("diff_bbox_100x100_center", |b| {
+        b.iter(|| find_diff_bounding_box(&prev, &curr, width, height, 0))
+    });
+}
+
+fn bench_diff_bbox_medium(c: &mut Criterion) {
+    // 320x240 frame
+    let width = 320;
+    let height = 240;
+    let size = width * height * 4;
+    let prev: Vec<u8> = vec![128; size];
+    let mut curr = prev.clone();
+    // Change bottom-right corner
+    for y in 200..240 {
+        for x in 280..320 {
+            let idx = (y * width + x) * 4;
+            curr[idx] = 255;
+        }
+    }
+
+    c.bench_function("diff_bbox_320x240_corner", |b| {
+        b.iter(|| find_diff_bounding_box(&prev, &curr, width, height, 0))
+    });
+}
+
+fn bench_diff_bbox_large(c: &mut Criterion) {
+    // 640x480 frame, full diff
+    let width = 640;
+    let height = 480;
+    let size = width * height * 4;
+    let prev: Vec<u8> = (0..size).map(|i| (i % 256) as u8).collect();
+    let curr: Vec<u8> = (0..size).map(|i| ((i + 1) % 256) as u8).collect();
+
+    c.bench_function("diff_bbox_640x480_full", |b| {
+        b.iter(|| find_diff_bounding_box(&prev, &curr, width, height, 0))
+    });
+}
+
+fn bench_diff_bbox_identical(c: &mut Criterion) {
+    // 320x240 identical frames (best case - early exit)
+    let width = 320;
+    let height = 240;
+    let size = width * height * 4;
+    let prev: Vec<u8> = vec![128; size];
+    let curr = prev.clone();
+
+    c.bench_function("diff_bbox_320x240_identical", |b| {
+        b.iter(|| find_diff_bounding_box(&prev, &curr, width, height, 0))
+    });
+}
+
 criterion_group!(
     simd_benches,
     bench_simd_pixel_compare,
     bench_scalar_pixel_compare,
+    bench_diff_bbox_small,
+    bench_diff_bbox_medium,
+    bench_diff_bbox_large,
+    bench_diff_bbox_identical,
 );
