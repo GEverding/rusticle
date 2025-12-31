@@ -1,3 +1,4 @@
+#![feature(portable_simd)]
 //! rusticle - High-performance GIF processing library.
 //!
 //! A Rust library for decoding, processing, and encoding GIF images.
@@ -10,6 +11,7 @@ pub mod optimize;
 pub mod palette_lut;
 pub mod quality;
 pub mod resize;
+pub mod simd_opt;
 pub mod types;
 
 #[cfg(feature = "async")]

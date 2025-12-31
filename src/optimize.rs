@@ -2,6 +2,7 @@
 //!
 //! Marks unchanged pixels as transparent to reduce file size.
 
+use crate::simd_opt::mark_unchanged_pixels_simd;
 use crate::types::{DisposalMethod, Frame, Gif, OptLevel};
 use rayon::prelude::*;
 
@@ -90,8 +91,7 @@ impl Gif {
         // Clamp quality to 0-100 range
         let quality = quality.min(100);
 
-        // Calculate threshold: quality 100 = 0 (lossless), quality 0 = 255 (maximum loss)
-        // Using 255/100 factor to map 0-100 to 0-255
+        // Calculate threshold: quality 100 = 0 (lossless), quality 0 = 20 (conservative max)
         let threshold = ((100 - quality as u16) * 20 / 100) as u8;
 
         // Compare each frame to the previous frame, like optimize does.
@@ -125,6 +125,7 @@ impl Gif {
 }
 
 /// Optimize a single frame by comparing to the previous frame.
+/// Uses SIMD-accelerated pixel comparison.
 fn optimize_frame(frame: &Frame, prev_frame: &Frame, threshold: u8, level: OptLevel) -> Frame {
     let mut optimized = frame.clone();
 
@@ -136,34 +137,15 @@ fn optimize_frame(frame: &Frame, prev_frame: &Frame, threshold: u8, level: OptLe
 
     let width = frame.width as usize;
     let height = frame.height as usize;
-    let pixel_count = width * height;
 
-    // Mark unchanged pixels as transparent
-    for i in 0..pixel_count {
-        let pixel_idx = i * 4;
-        if pixel_idx + 3 < optimized.pixels.len() && pixel_idx + 3 < prev_frame.pixels.len() {
-            let curr = [
-                optimized.pixels[pixel_idx],
-                optimized.pixels[pixel_idx + 1],
-                optimized.pixels[pixel_idx + 2],
-                optimized.pixels[pixel_idx + 3],
-            ];
-            let prev = [
-                prev_frame.pixels[pixel_idx],
-                prev_frame.pixels[pixel_idx + 1],
-                prev_frame.pixels[pixel_idx + 2],
-                prev_frame.pixels[pixel_idx + 3],
-            ];
-
-            if pixels_similar(&curr, &prev, threshold) {
-                // Mark as transparent - set RGB to black so all transparent pixels
-                // map to the same palette entry during quantization
-                optimized.pixels[pixel_idx] = 0;
-                optimized.pixels[pixel_idx + 1] = 0;
-                optimized.pixels[pixel_idx + 2] = 0;
-                optimized.pixels[pixel_idx + 3] = 0;
-            }
-        }
+    // Use SIMD to mark unchanged pixels as transparent
+    let min_len = optimized.pixels.len().min(prev_frame.pixels.len());
+    if min_len >= 4 && min_len % 4 == 0 {
+        mark_unchanged_pixels_simd(
+            &mut optimized.pixels[..min_len],
+            &prev_frame.pixels[..min_len],
+            threshold,
+        );
     }
 
     // For O3, crop to bounding box of changed pixels
@@ -182,42 +164,14 @@ fn optimize_frame(frame: &Frame, prev_frame: &Frame, threshold: u8, level: OptLe
 }
 
 /// Apply lossy compression to a single frame.
-///
-/// Marks pixels that are "close enough" to the canvas state as transparent,
-/// using perceptual color distance with weighted RGB channels.
+/// Uses SIMD-accelerated pixel comparison.
 fn apply_lossy_frame(frame: &Frame, canvas: &[u8], threshold: u8) -> Frame {
     let mut lossy = frame.clone();
 
-    let width = frame.width as usize;
-    let height = frame.height as usize;
-    let pixel_count = width * height;
-
-    // Mark "close enough" pixels as transparent
-    for i in 0..pixel_count {
-        let pixel_idx = i * 4;
-        if pixel_idx + 3 < lossy.pixels.len() && pixel_idx + 3 < canvas.len() {
-            let curr = [
-                lossy.pixels[pixel_idx],
-                lossy.pixels[pixel_idx + 1],
-                lossy.pixels[pixel_idx + 2],
-                lossy.pixels[pixel_idx + 3],
-            ];
-            let canvas_pixel = [
-                canvas[pixel_idx],
-                canvas[pixel_idx + 1],
-                canvas[pixel_idx + 2],
-                canvas[pixel_idx + 3],
-            ];
-
-            if pixels_similar(&curr, &canvas_pixel, threshold) {
-                // Mark as transparent - set RGB to black so all transparent pixels
-                // map to the same palette entry during quantization
-                lossy.pixels[pixel_idx] = 0;
-                lossy.pixels[pixel_idx + 1] = 0;
-                lossy.pixels[pixel_idx + 2] = 0;
-                lossy.pixels[pixel_idx + 3] = 0;
-            }
-        }
+    // Use SIMD to mark similar pixels as transparent
+    let min_len = lossy.pixels.len().min(canvas.len());
+    if min_len >= 4 && min_len % 4 == 0 {
+        mark_unchanged_pixels_simd(&mut lossy.pixels[..min_len], &canvas[..min_len], threshold);
     }
 
     // Set disposal method to Keep
@@ -526,7 +480,7 @@ mod tests {
         };
 
         let lossy = gif.lossy(0);
-        // Quality 0 should have threshold 255, so all pixels should be marked transparent
+        // Quality 0 should have threshold 20, so pixels with diff 1 should be transparent
         let frame2_lossy = &lossy.frames[1];
         for i in 0..4 {
             assert_eq!(

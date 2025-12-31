@@ -1,7 +1,21 @@
 use crate::error::{Error, Result};
 use crate::palette_lut::PaletteLut;
 use crate::types::{DisposalMethod, Gif};
+use rayon::prelude::*;
 use std::io::Write;
+
+/// Quantized frame data ready for encoding.
+struct QuantizedFrame {
+    palette: Vec<u8>,
+    indices: Vec<u8>,
+    transparent_idx: Option<u8>,
+    delay: std::time::Duration,
+    dispose: DisposalMethod,
+    left: u16,
+    top: u16,
+    width: u16,
+    height: u16,
+}
 
 impl Gif {
     /// Encode to byte vector.
@@ -46,20 +60,27 @@ impl Gif {
         let lut = self.original_palette.as_ref().map(|p| PaletteLut::new(p));
         let lut_ref = lut.as_ref();
 
-        // Encode each frame
-        for frame in &self.frames {
-            encode_frame(&mut encoder, frame, lut_ref)?;
+        // Quantize all frames in parallel (expensive part)
+        let quantized_frames: Vec<QuantizedFrame> = self
+            .frames
+            .par_iter()
+            .map(|frame| quantize_frame_parallel(frame, lut_ref))
+            .collect::<Result<Vec<_>>>()?;
+
+        // Write quantized frames sequentially (GIF format requires order)
+        for qframe in quantized_frames {
+            write_quantized_frame(&mut encoder, &qframe)?;
         }
 
         Ok(())
     }
 }
 
-fn encode_frame<W: Write>(
-    encoder: &mut gif::Encoder<W>,
+/// Quantize a frame in parallel context (no encoder access).
+fn quantize_frame_parallel(
     frame: &crate::types::Frame,
     lut: Option<&PaletteLut>,
-) -> Result<()> {
+) -> Result<QuantizedFrame> {
     // Quantize RGBA to indexed color
     let (palette, indexed, transparent_idx) = quantize_rgba(
         &frame.pixels,
@@ -68,12 +89,30 @@ fn encode_frame<W: Write>(
         lut,
     )?;
 
+    Ok(QuantizedFrame {
+        palette,
+        indices: indexed,
+        transparent_idx,
+        delay: frame.delay,
+        dispose: frame.dispose,
+        left: frame.left,
+        top: frame.top,
+        width: frame.width,
+        height: frame.height,
+    })
+}
+
+/// Write a pre-quantized frame to the encoder (sequential).
+fn write_quantized_frame<W: Write>(
+    encoder: &mut gif::Encoder<W>,
+    qframe: &QuantizedFrame,
+) -> Result<()> {
     // Convert delay from Duration to gif units (10ms increments)
-    let delay_ms = frame.delay.as_millis() as u16;
+    let delay_ms = qframe.delay.as_millis() as u16;
     let delay_units = (delay_ms + 5) / 10; // Round to nearest 10ms unit
 
     // Map disposal method
-    let disposal = match frame.dispose {
+    let disposal = match qframe.dispose {
         DisposalMethod::None => gif::DisposalMethod::Any,
         DisposalMethod::Keep => gif::DisposalMethod::Keep,
         DisposalMethod::Background => gif::DisposalMethod::Background,
@@ -82,24 +121,24 @@ fn encode_frame<W: Write>(
 
     // Create gif frame
     let mut gif_frame = gif::Frame::from_indexed_pixels(
-        frame.width,
-        frame.height,
-        indexed,
-        Some(palette.len() as u8),
+        qframe.width,
+        qframe.height,
+        qframe.indices.clone(),
+        Some(qframe.palette.len() as u8),
     );
 
     // Set the palette on the frame
-    gif_frame.palette = Some(palette);
+    gif_frame.palette = Some(qframe.palette.clone());
 
     // Set transparent index if we have transparent pixels
-    if let Some(idx) = transparent_idx {
+    if let Some(idx) = qframe.transparent_idx {
         gif_frame.transparent = Some(idx);
     }
 
     gif_frame.delay = delay_units;
     gif_frame.dispose = disposal;
-    gif_frame.left = frame.left;
-    gif_frame.top = frame.top;
+    gif_frame.left = qframe.left;
+    gif_frame.top = qframe.top;
 
     encoder
         .write_frame(&gif_frame)

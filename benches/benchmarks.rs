@@ -31,6 +31,7 @@ fn create_test_gif(width: u16, height: u16, frame_count: usize) -> Gif {
         global_palette: None,
         frames,
         loop_count: LoopCount::Infinite,
+        original_palette: None,
     }
 }
 
@@ -141,4 +142,40 @@ criterion_group!(
     bench_lossy_80,
     bench_full_pipeline,
 );
-criterion_main!(benches);
+criterion_main!(benches, simd_benches);
+
+// SIMD vs scalar benchmarks
+use rusticle::simd_opt::{mark_unchanged_pixels_scalar, mark_unchanged_pixels_simd};
+
+fn bench_simd_pixel_compare(c: &mut Criterion) {
+    // 200x200 = 40000 pixels = 160000 bytes
+    let size = 160_000;
+    let prev: Vec<u8> = (0..size).map(|i| ((i * 7) % 256) as u8).collect();
+    let curr_orig: Vec<u8> = (0..size).map(|i| ((i * 7 + 2) % 256) as u8).collect();
+    
+    c.bench_function("simd_pixel_compare_200x200", |b| {
+        b.iter(|| {
+            let mut curr = curr_orig.clone();
+            mark_unchanged_pixels_simd(&mut curr, &prev, 5)
+        })
+    });
+}
+
+fn bench_scalar_pixel_compare(c: &mut Criterion) {
+    let size = 160_000;
+    let prev: Vec<u8> = (0..size).map(|i| ((i * 7) % 256) as u8).collect();
+    let curr_orig: Vec<u8> = (0..size).map(|i| ((i * 7 + 2) % 256) as u8).collect();
+    
+    c.bench_function("scalar_pixel_compare_200x200", |b| {
+        b.iter(|| {
+            let mut curr = curr_orig.clone();
+            mark_unchanged_pixels_scalar(&mut curr, &prev, 5)
+        })
+    });
+}
+
+criterion_group!(
+    simd_benches,
+    bench_simd_pixel_compare,
+    bench_scalar_pixel_compare,
+);

@@ -1,12 +1,14 @@
 //! Fast palette lookup table for nearest-neighbor color mapping.
 //!
-//! Uses a 5-bit-per-channel lookup table (32×32×32 = 32KB) for O(1) color lookup.
+//! Uses a 6-bit-per-channel lookup table (64×64×64 = 262KB) for O(1) color lookup.
 //! Pre-computes the nearest palette index for every RGB cell to avoid O(pixels × 256)
 //! distance calculations.
 
+use rayon::prelude::*;
+
 /// Fast palette lookup table for nearest-neighbor color mapping.
 ///
-/// Uses 5 bits per channel (32KB table) for O(1) color lookup.
+/// Uses 6 bits per channel (262KB table) for O(1) color lookup with improved accuracy.
 ///
 /// # Example
 /// ```ignore
@@ -15,8 +17,8 @@
 /// let idx = lut.map(255, 0, 0);  // Returns 0 (red)
 /// ```
 pub struct PaletteLut {
-    /// 32×32×32 table mapping RGB555 to palette index
-    table: Box<[u8; 32768]>,
+    /// 64×64×64 table mapping RGB666 to palette index (262144 bytes)
+    table: Box<[u8; 262144]>,
     /// Original palette for distance calculations
     palette: Vec<[u8; 3]>,
 }
@@ -24,31 +26,38 @@ pub struct PaletteLut {
 impl PaletteLut {
     /// Build LUT from a palette (max 256 colors).
     ///
+    /// Parallelizes construction across R slices using rayon.
+    ///
     /// # Panics
     /// Panics if palette has more than 256 colors.
     pub fn new(palette: &[[u8; 3]]) -> Self {
         assert!(palette.len() <= 256, "Palette must have at most 256 colors");
 
-        let mut table = Box::new([0u8; 32768]);
+        // Build table in parallel by R slices (64 slices of 4096 entries each)
+        let table_vec: Vec<u8> = (0..64u8)
+            .into_par_iter()
+            .flat_map(|r| {
+                let mut slice = vec![0u8; 4096]; // 64 * 64
+                for g in 0..64u8 {
+                    for b in 0..64u8 {
+                        // Cell center in 8-bit space
+                        // Expand 6-bit value to 8-bit by shifting left 2 and replicating high bits
+                        let r8 = (r << 2) | (r >> 4);
+                        let g8 = (g << 2) | (g >> 4);
+                        let b8 = (b << 2) | (b >> 4);
 
-        // For each cell in 32×32×32 space
-        for r in 0..32u8 {
-            for g in 0..32u8 {
-                for b in 0..32u8 {
-                    // Cell center in 8-bit space
-                    // Expand 5-bit value to 8-bit by shifting left 3 and replicating high bits
-                    let r8 = (r << 3) | (r >> 2);
-                    let g8 = (g << 3) | (g >> 2);
-                    let b8 = (b << 3) | (b >> 2);
+                        // Find nearest palette entry
+                        let idx = Self::find_nearest(palette, r8, g8, b8);
 
-                    // Find nearest palette entry
-                    let idx = Self::find_nearest(palette, r8, g8, b8);
-
-                    let table_idx = ((r as usize) << 10) | ((g as usize) << 5) | (b as usize);
-                    table[table_idx] = idx;
+                        slice[((g as usize) << 6) | (b as usize)] = idx;
+                    }
                 }
-            }
-        }
+                slice
+            })
+            .collect();
+
+        let mut table = Box::new([0u8; 262144]);
+        table.copy_from_slice(&table_vec);
 
         Self {
             table,
@@ -85,7 +94,7 @@ impl PaletteLut {
     /// ```
     #[inline]
     pub fn map(&self, r: u8, g: u8, b: u8) -> u8 {
-        let idx = ((r as usize >> 3) << 10) | ((g as usize >> 3) << 5) | (b as usize >> 3);
+        let idx = ((r as usize >> 2) << 12) | ((g as usize >> 2) << 6) | (b as usize >> 2);
         self.table[idx]
     }
 
@@ -291,8 +300,8 @@ mod tests {
         let palette = make_simple_palette();
         let lut = PaletteLut::new(&palette);
 
-        // Table should be exactly 32KB
-        assert_eq!(std::mem::size_of_val(&*lut.table), 32768);
+        // Table should be exactly 262KB (64^3)
+        assert_eq!(std::mem::size_of_val(&*lut.table), 262144);
     }
 
     #[test]
