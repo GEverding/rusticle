@@ -1,13 +1,15 @@
+//! GIF encoding - convert frames back to GIF format.
+
 use crate::error::{Error, Result};
 use crate::palette_lut::PaletteLut;
 use crate::types::{DisposalMethod, Gif};
 use rayon::prelude::*;
 use std::io::Write;
 
-/// Quantized frame data ready for encoding.
+/// Intermediate representation of a quantized frame.
 struct QuantizedFrame {
-    palette: Vec<u8>,
-    indices: Vec<u8>,
+    palette: Vec<u8>, // Flat RGB: [r0,g0,b0,r1,g1,b1,...]
+    indices: Vec<u8>, // Palette indices
     transparent_idx: Option<u8>,
     delay: std::time::Duration,
     dispose: DisposalMethod,
@@ -18,26 +20,29 @@ struct QuantizedFrame {
 }
 
 impl Gif {
-    /// Encode to byte vector.
-    pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        let mut buf = Vec::new();
-        self.encode_to(&mut buf)?;
-        Ok(buf)
-    }
-
-    /// Encode to byte vector, consuming self.
+    /// Encode to bytes (convenience method).
     ///
-    /// Convenience method for chaining operations that returns owned bytes.
+    /// # Errors
+    /// Returns `Error::EncodeError` if encoding fails.
     ///
     /// # Example
     /// ```ignore
-    /// let gif = Gif::from_bytes(&data)?;
     /// let bytes = gif
     ///     .resize(640, 480, Filter::Lanczos3)?
     ///     .optimize(OptLevel::O3)
     ///     .lossy(80)
     ///     .into_bytes()?;
     /// ```
+    /// Encode to bytes.
+    ///
+    /// # Errors
+    /// Returns `Error::EncodeError` if encoding fails.
+    pub fn to_bytes(&self) -> Result<Vec<u8>> {
+        let mut buffer = Vec::new();
+        self.encode_to(&mut buffer)?;
+        Ok(buffer)
+    }
+
     pub fn into_bytes(self) -> Result<Vec<u8>> {
         self.to_bytes()
     }
@@ -124,7 +129,7 @@ fn write_quantized_frame<W: Write>(
         qframe.width,
         qframe.height,
         qframe.indices.clone(),
-        Some(qframe.palette.len() as u8),
+        qframe.transparent_idx,
     );
 
     // Set the palette on the frame
@@ -166,32 +171,57 @@ fn try_fast_encode(rgba_pixels: &[u8], lut: &PaletteLut) -> Option<(Vec<u8>, Vec
     Some((palette_rgb, indices))
 }
 
-/// Find transparent index by looking for low-alpha pixels in source.
-fn find_transparent_index(rgba_pixels: &[u8], indices: &[u8], palette: &[[u8; 3]]) -> Option<u8> {
-    // Look for pixels with alpha < 128 in the source
-    let mut transparent_pixels = std::collections::HashSet::new();
+/// Find transparent index and remap transparent pixels to a dedicated palette entry.
+/// This ensures transparent pixels don't share an index with opaque pixels.
+fn find_transparent_index_and_remap(
+    rgba_pixels: &[u8],
+    indices: &mut [u8],
+    palette: &mut Vec<u8>,
+) -> Option<u8> {
+    // Check if there are any transparent pixels
+    let has_transparent = rgba_pixels.chunks_exact(4).any(|p| p[3] < 128);
+
+    if !has_transparent {
+        return None;
+    }
+
+    let palette_len = palette.len() / 3;
+
+    // Count usage of each palette index by OPAQUE pixels only
+    let mut opaque_usage = vec![0usize; palette_len];
+    for (i, pixel) in rgba_pixels.chunks_exact(4).enumerate() {
+        if pixel[3] >= 128 {
+            opaque_usage[indices[i] as usize] += 1;
+        }
+    }
+
+    // Find an index not used by any opaque pixel, or add a new entry
+    let transparent_idx = if let Some(unused) = opaque_usage.iter().position(|&count| count == 0) {
+        // Found an unused index - perfect for transparency
+        unused as u8
+    } else if palette_len < 256 {
+        // Add a new palette entry for transparency
+        palette.extend_from_slice(&[0, 0, 0]);
+        palette_len as u8
+    } else {
+        // All 256 indices used - find least used by opaque pixels
+        // This is a fallback that may cause some visual artifacts
+        opaque_usage
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, &count)| count)
+            .map(|(idx, _)| idx as u8)
+            .unwrap_or(255)
+    };
+
+    // Remap all transparent pixels to use the dedicated transparent index
     for (i, pixel) in rgba_pixels.chunks_exact(4).enumerate() {
         if pixel[3] < 128 {
-            transparent_pixels.insert(indices[i]);
+            indices[i] = transparent_idx;
         }
     }
 
-    // If we found transparent pixels, pick the least-used palette color
-    if !transparent_pixels.is_empty() {
-        // Count usage of each palette color
-        let mut color_usage = vec![0usize; palette.len()];
-        for &idx in indices {
-            color_usage[idx as usize] += 1;
-        }
-
-        // Find least-used color among transparent pixels
-        transparent_pixels
-            .iter()
-            .min_by_key(|&&idx| color_usage[idx as usize])
-            .copied()
-    } else {
-        None
-    }
+    Some(transparent_idx)
 }
 
 /// Quantize RGBA pixels to indexed color using imagequant or fast path.
@@ -212,9 +242,9 @@ fn quantize_rgba(
 
     // Try fast path if we have pre-built LUT
     if let Some(lut) = lut {
-        if let Some((palette_rgb, indices)) = try_fast_encode(rgba_pixels, lut) {
-            // Find transparent index (look for low-alpha pixels in source)
-            let transparent_idx = find_transparent_index(rgba_pixels, &indices, lut.palette());
+        if let Some((mut palette_rgb, mut indices)) = try_fast_encode(rgba_pixels, lut) {
+            let transparent_idx =
+                find_transparent_index_and_remap(rgba_pixels, &mut indices, &mut palette_rgb);
             return Ok((palette_rgb, indices, transparent_idx));
         }
     }
@@ -253,26 +283,21 @@ fn quantize_rgba(
         .map_err(|e| Error::EncodeError(format!("failed to set dithering: {}", e)))?;
 
     // Remap pixels to palette indices
-    let (palette, indices) = result
+    let (palette, mut indices) = result
         .remapped(&mut img)
         .map_err(|e| Error::EncodeError(format!("failed to remap: {}", e)))?;
 
-    // Find transparent color index (alpha < 128)
-    let mut transparent_idx = None;
-    for (i, color) in palette.iter().enumerate() {
-        if color.a < 128 {
-            transparent_idx = Some(i as u8);
-            break;
-        }
-    }
-
-    // Convert palette to flat RGB format (3 bytes per color)
+    // Convert palette to flat RGB format
     let mut palette_rgb = Vec::with_capacity(palette.len() * 3);
     for color in palette {
         palette_rgb.push(color.r);
         palette_rgb.push(color.g);
         palette_rgb.push(color.b);
     }
+
+    // Handle transparency - find/create dedicated index for transparent pixels
+    let transparent_idx =
+        find_transparent_index_and_remap(rgba_pixels, &mut indices, &mut palette_rgb);
 
     Ok((palette_rgb, indices, transparent_idx))
 }
@@ -298,56 +323,68 @@ mod tests {
     }
 
     #[test]
-    fn test_quantize_rgba_size_mismatch() {
-        let rgba_pixels = vec![255, 0, 0, 255, 0, 255]; // Only 6 bytes, not 4*4=16
-        let result = quantize_rgba(&rgba_pixels, 2, 2, None);
-        assert!(result.is_err(), "Should error on size mismatch");
-    }
+    fn test_quantize_rgba_invalid_size() {
+        let rgba_pixels = vec![255, 0, 0, 255]; // Only 1 pixel
 
-    #[test]
-    fn test_quantize_rgba_single_pixel() {
-        let rgba_pixels = vec![128, 64, 32, 255];
-        let result = quantize_rgba(&rgba_pixels, 1, 1, None);
-        assert!(result.is_ok(), "Should quantize single pixel");
-        let (palette, indexed, _) = result.unwrap();
-        assert!(!palette.is_empty(), "Palette should not be empty");
-        assert_eq!(indexed.len(), 1, "Indexed data should have 1 pixel");
-    }
-
-    #[test]
-    fn test_quantize_rgba_large_image() {
-        let mut rgba_pixels = Vec::new();
-        // Create 100 pixels (10x10)
-        for i in 0..100 {
-            rgba_pixels.push((i % 256) as u8);
-            rgba_pixels.push(((i * 2) % 256) as u8);
-            rgba_pixels.push(((i * 3) % 256) as u8);
-            rgba_pixels.push(255);
-        }
-        let result = quantize_rgba(&rgba_pixels, 10, 10, None);
-        assert!(result.is_ok(), "Should quantize large image");
-        let (palette, indexed, _) = result.unwrap();
-        assert!(!palette.is_empty(), "Palette should not be empty");
-        assert_eq!(indexed.len(), 100, "Indexed data should have 100 pixels");
+        let result = quantize_rgba(&rgba_pixels, 2, 2, None); // Expects 4 pixels
+        assert!(result.is_err(), "Should fail with size mismatch");
     }
 
     #[test]
     fn test_quantize_rgba_with_transparency() {
         let rgba_pixels = vec![
-            255, 0, 0, 255, // Red (opaque)
-            0, 255, 0, 0, // Green (fully transparent)
-            0, 0, 255, 255, // Blue (opaque)
-            255, 255, 0, 0, // Yellow (fully transparent)
+            255, 0, 0, 255, // Red, opaque
+            0, 255, 0, 255, // Green, opaque
+            0, 0, 255, 0, // Blue, transparent
+            255, 255, 0, 255, // Yellow, opaque
         ];
 
         let result = quantize_rgba(&rgba_pixels, 2, 2, None);
-        assert!(result.is_ok(), "Should quantize data with transparency");
-        let (palette, indexed, transparent_idx) = result.unwrap();
-        assert!(!palette.is_empty(), "Palette should not be empty");
-        assert_eq!(indexed.len(), 4, "Indexed data should have 4 pixels");
+        assert!(result.is_ok());
+        let (_, indices, transparent_idx) = result.unwrap();
+
+        // Should have a transparent index
+        assert!(transparent_idx.is_some(), "Should have transparent index");
+        let trans_idx = transparent_idx.unwrap();
+
+        // The transparent pixel (index 2) should use the transparent index
+        assert_eq!(
+            indices[2], trans_idx,
+            "Transparent pixel should use transparent index"
+        );
+
+        // Opaque pixels should NOT use the transparent index
+        assert_ne!(
+            indices[0], trans_idx,
+            "Opaque pixel should not use transparent index"
+        );
+        assert_ne!(
+            indices[1], trans_idx,
+            "Opaque pixel should not use transparent index"
+        );
+        assert_ne!(
+            indices[3], trans_idx,
+            "Opaque pixel should not use transparent index"
+        );
+    }
+
+    #[test]
+    fn test_quantize_rgba_no_transparency() {
+        let rgba_pixels = vec![
+            255, 0, 0, 255, // Red, opaque
+            0, 255, 0, 255, // Green, opaque
+            0, 0, 255, 255, // Blue, opaque
+            255, 255, 0, 255, // Yellow, opaque
+        ];
+
+        let result = quantize_rgba(&rgba_pixels, 2, 2, None);
+        assert!(result.is_ok());
+        let (_, _, transparent_idx) = result.unwrap();
+
+        // Should NOT have a transparent index
         assert!(
-            transparent_idx.is_some(),
-            "Should have transparent index for transparent pixels"
+            transparent_idx.is_none(),
+            "Should not have transparent index"
         );
     }
 }

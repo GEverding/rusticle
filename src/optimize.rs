@@ -140,7 +140,7 @@ fn optimize_frame(frame: &Frame, prev_frame: &Frame, threshold: u8, level: OptLe
 
     // Use SIMD to mark unchanged pixels as transparent
     let min_len = optimized.pixels.len().min(prev_frame.pixels.len());
-    if min_len >= 4 && min_len % 4 == 0 {
+    if min_len >= 4 && min_len.is_multiple_of(4) {
         mark_unchanged_pixels_simd(
             &mut optimized.pixels[..min_len],
             &prev_frame.pixels[..min_len],
@@ -170,7 +170,7 @@ fn apply_lossy_frame(frame: &Frame, canvas: &[u8], threshold: u8) -> Frame {
 
     // Use SIMD to mark similar pixels as transparent
     let min_len = lossy.pixels.len().min(canvas.len());
-    if min_len >= 4 && min_len % 4 == 0 {
+    if min_len >= 4 && min_len.is_multiple_of(4) {
         mark_unchanged_pixels_simd(&mut lossy.pixels[..min_len], &canvas[..min_len], threshold);
     }
 
@@ -182,6 +182,7 @@ fn apply_lossy_frame(frame: &Frame, canvas: &[u8], threshold: u8) -> Frame {
 
 /// Check if two pixels are similar within threshold (per-channel).
 #[inline]
+#[allow(dead_code)]
 fn pixels_similar(a: &[u8; 4], b: &[u8; 4], threshold: u8) -> bool {
     a[0].abs_diff(b[0]) <= threshold
         && a[1].abs_diff(b[1]) <= threshold

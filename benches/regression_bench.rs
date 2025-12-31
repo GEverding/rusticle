@@ -11,7 +11,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::Command;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct BenchResult {
@@ -243,7 +243,7 @@ fn main() {
     // Check for regression vs previous run
     if let Ok(f) = fs::File::open(results_file) {
         let reader = BufReader::new(f);
-        let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
+        let lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
 
         if lines.len() >= 2 {
             let prev: BenchSummary = serde_json::from_str(&lines[lines.len() - 2]).unwrap();
