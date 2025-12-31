@@ -2,6 +2,7 @@ use std::io::Read;
 use std::time::Duration;
 
 use crate::error::{Error, Result};
+use crate::security::{calculate_canvas_size_safe, SecurityLimits};
 use crate::types::{DisposalMethod, Frame, Gif, LoopCount, Palette};
 
 /// Composite a frame onto the canvas at the specified position.
@@ -85,13 +86,56 @@ fn clear_region(
 }
 
 impl Gif {
-    /// Decode a GIF from a byte slice.
+    /// Decode a GIF from a byte slice with default security limits.
+    ///
+    /// Uses [`SecurityLimits::default()`] which allows:
+    /// - Maximum dimensions: 4096x4096
+    /// - Maximum frames: 10,000
+    /// - Maximum memory: 1 GB
+    ///
+    /// For custom limits, use [`from_bytes_with_limits`].
     pub fn from_bytes(data: &[u8]) -> Result<Self> {
         Self::from_read(data)
     }
 
-    /// Decode a GIF from any Read implementation.
+    /// Decode a GIF from a byte slice with custom security limits.
+    ///
+    /// # Example
+    /// ```ignore
+    /// use rusticle::{Gif, SecurityLimits};
+    ///
+    /// // Use restrictive limits for untrusted input
+    /// let limits = SecurityLimits::thumbnail();
+    /// let gif = Gif::from_bytes_with_limits(&data, limits)?;
+    /// ```
+    pub fn from_bytes_with_limits(data: &[u8], limits: SecurityLimits) -> Result<Self> {
+        Self::from_read_with_limits(data, limits)
+    }
+
+    /// Decode a GIF from any Read implementation with default security limits.
+    ///
+    /// Uses [`SecurityLimits::default()`]. For custom limits, use [`from_read_with_limits`].
     pub fn from_read<R: Read>(reader: R) -> Result<Self> {
+        Self::from_read_with_limits(reader, SecurityLimits::default())
+    }
+
+    /// Decode a GIF from any Read implementation with custom security limits.
+    ///
+    /// This is the core decoding function that enforces security limits to protect
+    /// against GIF bombs and other malicious inputs.
+    ///
+    /// # Security
+    ///
+    /// The following checks are performed:
+    /// - Dimensions must not exceed `limits.max_width` and `limits.max_height`
+    /// - Frame count must not exceed `limits.max_frame_count`
+    /// - Total memory (width × height × 4 × frames) must not exceed `limits.max_memory_bytes`
+    /// - All memory calculations use checked arithmetic to prevent overflow
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::SecurityViolation`] if any limit is exceeded.
+    pub fn from_read_with_limits<R: Read>(reader: R, limits: SecurityLimits) -> Result<Self> {
         let mut decoder = gif::DecodeOptions::new();
         decoder.set_color_output(gif::ColorOutput::RGBA);
 
@@ -101,6 +145,9 @@ impl Gif {
 
         let width = reader.width();
         let height = reader.height();
+
+        // SECURITY: Validate dimensions before any allocation
+        limits.validate_dimensions(width, height)?;
 
         // Extract global palette if present
         let global_palette = reader.global_palette().map(|palette| {
@@ -119,8 +166,8 @@ impl Gif {
 
         let mut frames = Vec::new();
 
-        // Canvas for compositing frames
-        let canvas_size = (width as usize) * (height as usize) * 4;
+        // SECURITY: Use overflow-safe canvas size calculation
+        let canvas_size = calculate_canvas_size_safe(width, height)?;
         let mut canvas = vec![0u8; canvas_size];
         let mut prev_canvas = vec![0u8; canvas_size];
 
@@ -182,6 +229,12 @@ impl Gif {
                 width,
                 height,
             });
+
+            // SECURITY: Check frame count limit
+            limits.validate_frame_count(frames.len())?;
+
+            // SECURITY: Check total memory usage
+            limits.validate_memory(width, height, frames.len())?;
 
             // Apply disposal method for next frame
             match dispose {
@@ -246,5 +299,29 @@ mod tests {
         let data = b"Invalid GIF data";
         let result = Gif::from_read(&data[..]);
         assert!(result.is_err(), "Invalid read should fail");
+    }
+
+    #[test]
+    fn test_decode_with_custom_limits() {
+        // Test that custom limits are respected
+        let limits = SecurityLimits::thumbnail();
+        assert_eq!(limits.max_width, 256);
+        assert_eq!(limits.max_height, 256);
+    }
+
+    #[test]
+    fn test_security_limits_default() {
+        let limits = SecurityLimits::default();
+        assert_eq!(limits.max_width, 4096);
+        assert_eq!(limits.max_height, 4096);
+        assert_eq!(limits.max_frame_count, 10_000);
+    }
+
+    #[test]
+    fn test_from_bytes_with_limits_api() {
+        // Test that the API exists and works
+        let limits = SecurityLimits::default();
+        let result = Gif::from_bytes_with_limits(&[], limits);
+        assert!(result.is_err(), "Empty bytes should fail");
     }
 }

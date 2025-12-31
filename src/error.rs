@@ -1,6 +1,8 @@
 use std::io;
 use thiserror::Error;
 
+use crate::security::SecurityViolation;
+
 /// Errors that can occur during GIF processing.
 #[derive(Error, Debug)]
 pub enum Error {
@@ -11,6 +13,10 @@ pub enum Error {
     /// Invalid or truncated GIF data.
     #[error("invalid GIF: {0}")]
     InvalidGif(String),
+
+    /// Security limit exceeded (e.g., GIF bomb protection).
+    #[error("security violation: {0}")]
+    SecurityViolation(#[from] SecurityViolation),
 
     /// Error during GIF encoding.
     #[error("encode error: {0}")]
