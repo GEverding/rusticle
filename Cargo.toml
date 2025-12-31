@@ -24,3 +24,18 @@ async = ["tokio"]
 [[bench]]
 name = "benchmarks"
 harness = false
+
+[dependencies.serde]
+version = "1"
+features = ["derive"]
+
+[dependencies.serde_json]
+version = "1"
+
+[dependencies.chrono]
+version = "0.4"
+features = ["serde"]
+
+[[bin]]
+name = "bench"
+path = "benches/regression_bench.rs"
