@@ -2,7 +2,7 @@
 //!
 //! Marks unchanged pixels as transparent to reduce file size.
 
-use crate::simd_opt::mark_unchanged_pixels_simd;
+use crate::simd_opt::{find_diff_bounding_box, mark_unchanged_pixels_simd, DiffRect};
 use crate::types::{DisposalMethod, Frame, Gif, OptLevel};
 use rayon::prelude::*;
 
@@ -36,20 +36,10 @@ impl Gif {
             OptLevel::O3 => 8,
         };
 
-        let optimized_frames = self
-            .frames
-            .par_iter()
-            .enumerate()
-            .map(|(idx, frame)| {
-                if idx == 0 {
-                    // First frame is never optimized
-                    frame.clone()
-                } else {
-                    let prev_frame = &self.frames[idx - 1];
-                    optimize_frame(frame, prev_frame, threshold, level)
-                }
-            })
-            .collect();
+        // Only crop to bounding box for O3 (most aggressive)
+        let crop_to_bbox = level == OptLevel::O3;
+
+        let optimized_frames = optimize_frames_internal(&self.frames, threshold, crop_to_bbox);
 
         Gif {
             width: self.width,
@@ -94,24 +84,10 @@ impl Gif {
         // Calculate threshold: quality 100 = 0 (lossless), quality 0 = 20 (conservative max)
         let threshold = ((100 - quality as u16) * 20 / 100) as u8;
 
-        // Compare each frame to the previous frame, like optimize does.
-        // This avoids error accumulation from maintaining a separate canvas
-        // that gets out of sync with actual encode/decode pixel values.
-        let lossy_frames: Vec<Frame> = self
-            .frames
-            .iter()
-            .enumerate()
-            .map(|(idx, frame)| {
-                if idx == 0 {
-                    // First frame: no optimization
-                    frame.clone()
-                } else {
-                    // Compare to previous frame
-                    let prev_frame = &self.frames[idx - 1];
-                    apply_lossy_frame(frame, &prev_frame.pixels, threshold)
-                }
-            })
-            .collect();
+        // Always crop to bounding box for lossy (maximize compression)
+        let crop_to_bbox = true;
+
+        let lossy_frames = optimize_frames_internal(&self.frames, threshold, crop_to_bbox);
 
         Gif {
             width: self.width,
@@ -124,13 +100,35 @@ impl Gif {
     }
 }
 
-/// Optimize a single frame by comparing to the previous frame.
-/// Uses SIMD-accelerated pixel comparison.
-fn optimize_frame(frame: &Frame, prev_frame: &Frame, threshold: u8, level: OptLevel) -> Frame {
-    let mut optimized = frame.clone();
+/// Internal optimization with configurable threshold and cropping.
+/// Shared by both optimize() and lossy() methods.
+fn optimize_frames_internal(frames: &[Frame], threshold: u8, crop_to_bbox: bool) -> Vec<Frame> {
+    frames
+        .par_iter()
+        .enumerate()
+        .map(|(idx, frame)| {
+            if idx == 0 {
+                // First frame is never optimized
+                frame.clone()
+            } else {
+                let prev_frame = &frames[idx - 1];
+                optimize_frame_internal(frame, prev_frame, threshold, crop_to_bbox)
+            }
+        })
+        .collect()
+}
 
+/// Optimize a single frame by comparing to the previous frame.
+/// Uses SIMD-accelerated pixel comparison and diff-based bounding box.
+fn optimize_frame_internal(
+    frame: &Frame,
+    prev_frame: &Frame,
+    threshold: u8,
+    crop_to_bbox: bool,
+) -> Frame {
     // Only optimize if frames have compatible dimensions
     if frame.width != prev_frame.width || frame.height != prev_frame.height {
+        let mut optimized = frame.clone();
         optimized.dispose = DisposalMethod::Keep;
         return optimized;
     }
@@ -138,46 +136,89 @@ fn optimize_frame(frame: &Frame, prev_frame: &Frame, threshold: u8, level: OptLe
     let width = frame.width as usize;
     let height = frame.height as usize;
 
-    // Use SIMD to mark unchanged pixels as transparent
-    let min_len = optimized.pixels.len().min(prev_frame.pixels.len());
-    if min_len >= 4 && min_len.is_multiple_of(4) {
-        mark_unchanged_pixels_simd(
-            &mut optimized.pixels[..min_len],
-            &prev_frame.pixels[..min_len],
-            threshold,
-        );
-    }
+    // Find diff bounding box FIRST
+    let diff_rect =
+        match find_diff_bounding_box(&prev_frame.pixels, &frame.pixels, width, height, threshold) {
+            Some(rect) => rect,
+            None => {
+                // Frames are identical - return minimal frame (1x1 transparent)
+                return Frame {
+                    pixels: vec![0, 0, 0, 0],
+                    delay: frame.delay,
+                    dispose: DisposalMethod::Keep,
+                    local_palette: None,
+                    left: 0,
+                    top: 0,
+                    width: 1,
+                    height: 1,
+                };
+            }
+        };
 
-    // For O3, crop to bounding box of changed pixels
-    if level == OptLevel::O3 {
-        if let Some((left, top, right, bottom)) =
-            find_bounding_box(&optimized.pixels, width, height)
-        {
-            optimized = crop_frame(&optimized, left, top, right, bottom);
+    // If crop_to_bbox: extract and process only the diff region
+    // Otherwise: process full frame but mark unchanged pixels
+    if crop_to_bbox {
+        extract_and_optimize_subframe(frame, prev_frame, &diff_rect, threshold)
+    } else {
+        // Full frame processing (existing behavior)
+        let mut optimized = frame.clone();
+        let min_len = optimized.pixels.len().min(prev_frame.pixels.len());
+        if min_len >= 4 && min_len.is_multiple_of(4) {
+            mark_unchanged_pixels_simd(
+                &mut optimized.pixels[..min_len],
+                &prev_frame.pixels[..min_len],
+                threshold,
+            );
+        }
+        optimized.dispose = DisposalMethod::Keep;
+        optimized
+    }
+}
+
+/// Extract sub-frame at diff_rect and mark unchanged pixels transparent.
+fn extract_and_optimize_subframe(
+    frame: &Frame,
+    prev_frame: &Frame,
+    diff_rect: &DiffRect,
+    threshold: u8,
+) -> Frame {
+    let src_width = frame.width as usize;
+    let new_width = diff_rect.width as usize;
+    let new_height = diff_rect.height as usize;
+
+    // Extract pixels from both frames at the diff region
+    let mut new_pixels = vec![0u8; new_width * new_height * 4];
+    let mut prev_pixels = vec![0u8; new_width * new_height * 4];
+
+    for y in 0..new_height {
+        for x in 0..new_width {
+            let src_x = diff_rect.left as usize + x;
+            let src_y = diff_rect.top as usize + y;
+            let src_idx = (src_y * src_width + src_x) * 4;
+            let dst_idx = (y * new_width + x) * 4;
+
+            new_pixels[dst_idx..dst_idx + 4].copy_from_slice(&frame.pixels[src_idx..src_idx + 4]);
+            prev_pixels[dst_idx..dst_idx + 4]
+                .copy_from_slice(&prev_frame.pixels[src_idx..src_idx + 4]);
         }
     }
 
-    // Set disposal method to Keep (don't clear before next frame)
-    optimized.dispose = DisposalMethod::Keep;
-
-    optimized
-}
-
-/// Apply lossy compression to a single frame.
-/// Uses SIMD-accelerated pixel comparison.
-fn apply_lossy_frame(frame: &Frame, canvas: &[u8], threshold: u8) -> Frame {
-    let mut lossy = frame.clone();
-
-    // Use SIMD to mark similar pixels as transparent
-    let min_len = lossy.pixels.len().min(canvas.len());
+    // Apply transparency marking within the extracted region
+    let min_len = new_pixels.len();
     if min_len >= 4 && min_len.is_multiple_of(4) {
-        mark_unchanged_pixels_simd(&mut lossy.pixels[..min_len], &canvas[..min_len], threshold);
+        mark_unchanged_pixels_simd(&mut new_pixels, &prev_pixels, threshold);
     }
 
-    // Set disposal method to Keep
-    lossy.dispose = DisposalMethod::Keep;
-
-    lossy
+    Frame {
+        pixels: new_pixels,
+        delay: frame.delay,
+        dispose: DisposalMethod::Keep,
+        local_palette: None,
+        left: diff_rect.left,
+        top: diff_rect.top,
+        width: diff_rect.width,
+        height: diff_rect.height,
+    }
 }
 
 /// Check if two pixels are similar within threshold (per-channel).
@@ -214,6 +255,7 @@ fn colors_similar(a: &[u8; 4], b: &[u8; 4], threshold: u8) -> bool {
 
 /// Find bounding box of non-transparent pixels.
 /// Returns (left, top, right, bottom) or None if all pixels are transparent.
+#[allow(dead_code)]
 fn find_bounding_box(pixels: &[u8], width: usize, height: usize) -> Option<(u16, u16, u16, u16)> {
     let mut left = width;
     let mut top = height;
@@ -247,6 +289,7 @@ fn find_bounding_box(pixels: &[u8], width: usize, height: usize) -> Option<(u16,
 }
 
 /// Crop frame to specified bounds.
+#[allow(dead_code)]
 fn crop_frame(frame: &Frame, left: u16, top: u16, right: u16, bottom: u16) -> Frame {
     let new_width = (right - left) as usize;
     let new_height = (bottom - top) as usize;
@@ -481,16 +524,13 @@ mod tests {
         };
 
         let lossy = gif.lossy(0);
-        // Quality 0 should have threshold 20, so pixels with diff 1 should be transparent
+        // Quality 0 should have threshold 20, so pixels with diff 1 should be transparent.
+        // With cropping enabled for lossy, all pixels are identical within threshold,
+        // so the frame becomes minimal (1x1 transparent).
         let frame2_lossy = &lossy.frames[1];
-        for i in 0..4 {
-            assert_eq!(
-                frame2_lossy.pixels[i * 4 + 3],
-                0,
-                "Pixel {} should be transparent",
-                i
-            );
-        }
+        assert_eq!(frame2_lossy.width, 1);
+        assert_eq!(frame2_lossy.height, 1);
+        assert_eq!(frame2_lossy.pixels.len(), 4); // 1x1 RGBA
     }
 
     #[test]
@@ -525,5 +565,26 @@ mod tests {
             lossy.frames[1].pixels[3], 255,
             "Pixel should be opaque at quality 95 (diff 2 > threshold 1)"
         );
+    }
+
+    #[test]
+    fn test_optimize_identical_frames_returns_minimal() {
+        let frame1 = make_frame(10, 10, [255, 0, 0, 255]);
+        let frame2 = make_frame(10, 10, [255, 0, 0, 255]); // identical
+
+        let gif = Gif {
+            width: 10,
+            height: 10,
+            global_palette: None,
+            frames: vec![frame1, frame2],
+            loop_count: crate::types::LoopCount::Infinite,
+            original_palette: None,
+        };
+
+        let optimized = gif.optimize(OptLevel::O3);
+        // Second frame should be minimal (1x1)
+        assert_eq!(optimized.frames[1].width, 1);
+        assert_eq!(optimized.frames[1].height, 1);
+        assert_eq!(optimized.frames[1].pixels.len(), 4); // 1x1 RGBA
     }
 }
