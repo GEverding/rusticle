@@ -43,6 +43,31 @@ Building PaletteLUT once per GIF vs per frame:
 
 This 4.8x internal improvement is on top of already being faster than gifsicle.
 
+## Diff-Based Bounding Box
+
+SIMD-accelerated detection of changed regions between frames for optimized encoding.
+
+### Performance
+
+| Frame Size | Scenario | Time |
+|------------|----------|------|
+| 100x100 | Center diff (10x10) | 5.4 µs |
+| 320x240 | Corner diff (40x40) | 52.9 µs |
+| 640x480 | Bottom-right diff (worst case) | 65.3 µs |
+| 320x240 | Identical (early exit) | 8.9 µs |
+
+### Key Observations
+
+- **Small diffs**: ~5.4 µs for 100x100 frame with localized change
+- **Medium diffs**: ~53 µs for 320x240 frame with corner region change
+- **Large diffs (worst case)**: ~65 µs for 640x480 frame requiring full scan
+- **Identical frames**: Early exit optimization provides ~9 µs baseline
+
+The diff bounding box detection enables:
+1. Cropping frames to only changed regions (reduces encoding work)
+2. Skipping unchanged frames entirely
+3. Optimized disposal methods based on actual changes
+
 ## Compression Quality
 
 ### Output Size Comparison

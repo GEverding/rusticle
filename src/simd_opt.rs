@@ -163,6 +163,24 @@ fn row_has_diff(prev_row: &[u8], curr_row: &[u8], threshold: u8) -> bool {
     false
 }
 
+/// Scalar version of row_has_diff for benchmarking comparison.
+#[inline]
+fn row_has_diff_scalar(prev_row: &[u8], curr_row: &[u8], threshold: u8) -> bool {
+    assert_eq!(prev_row.len(), curr_row.len());
+
+    for i in (0..prev_row.len()).step_by(4) {
+        if i + 3 < prev_row.len()
+            && (curr_row[i].abs_diff(prev_row[i]) > threshold
+                || curr_row[i + 1].abs_diff(prev_row[i + 1]) > threshold
+                || curr_row[i + 2].abs_diff(prev_row[i + 2]) > threshold
+                || curr_row[i + 3].abs_diff(prev_row[i + 3]) > threshold)
+        {
+            return true;
+        }
+    }
+    false
+}
+
 /// Find the minimal bounding box containing all pixels that differ between two frames.
 /// Returns None if frames are identical (within threshold).
 ///
@@ -221,6 +239,120 @@ pub fn find_diff_bounding_box(
         let row_start = y * bytes_per_row;
         let row_end = row_start + bytes_per_row;
         if row_has_diff(
+            &prev[row_start..row_end],
+            &curr[row_start..row_end],
+            threshold,
+        ) {
+            bottom = y;
+            break;
+        }
+    }
+
+    // Find left column with diff
+    let mut left = width;
+    for x in 0..width {
+        let mut has_diff = false;
+        for y in top..=bottom {
+            let idx = y * bytes_per_row + x * 4;
+            if curr[idx].abs_diff(prev[idx]) > threshold
+                || curr[idx + 1].abs_diff(prev[idx + 1]) > threshold
+                || curr[idx + 2].abs_diff(prev[idx + 2]) > threshold
+                || curr[idx + 3].abs_diff(prev[idx + 3]) > threshold
+            {
+                has_diff = true;
+                break;
+            }
+        }
+        if has_diff {
+            left = x;
+            break;
+        }
+    }
+
+    // Find right column with diff (scan from right)
+    let mut right = left;
+    for x in (left..width).rev() {
+        let mut has_diff = false;
+        for y in top..=bottom {
+            let idx = y * bytes_per_row + x * 4;
+            if curr[idx].abs_diff(prev[idx]) > threshold
+                || curr[idx + 1].abs_diff(prev[idx + 1]) > threshold
+                || curr[idx + 2].abs_diff(prev[idx + 2]) > threshold
+                || curr[idx + 3].abs_diff(prev[idx + 3]) > threshold
+            {
+                has_diff = true;
+                break;
+            }
+        }
+        if has_diff {
+            right = x;
+            break;
+        }
+    }
+
+    Some(DiffRect {
+        left: left as u16,
+        top: top as u16,
+        width: (right - left + 1) as u16,
+        height: (bottom - top + 1) as u16,
+    })
+}
+
+/// Scalar version of find_diff_bounding_box for benchmarking comparison.
+///
+/// # Arguments
+/// * `prev` - Previous frame data (RGBA bytes)
+/// * `curr` - Current frame data (RGBA bytes)
+/// * `width` - Frame width in pixels
+/// * `height` - Frame height in pixels
+/// * `threshold` - Difference threshold per channel (0-255)
+///
+/// # Panics
+/// Panics if `prev.len() != curr.len() != width * height * 4`
+#[must_use]
+pub fn find_diff_bounding_box_scalar(
+    prev: &[u8],
+    curr: &[u8],
+    width: usize,
+    height: usize,
+    threshold: u8,
+) -> Option<DiffRect> {
+    let expected_len = width * height * 4;
+    assert_eq!(prev.len(), expected_len, "prev buffer size mismatch");
+    assert_eq!(curr.len(), expected_len, "curr buffer size mismatch");
+
+    if width == 0 || height == 0 {
+        return None;
+    }
+
+    let bytes_per_row = width * 4;
+
+    // Find top row with diff
+    let mut top = height;
+    for y in 0..height {
+        let row_start = y * bytes_per_row;
+        let row_end = row_start + bytes_per_row;
+        if row_has_diff_scalar(
+            &prev[row_start..row_end],
+            &curr[row_start..row_end],
+            threshold,
+        ) {
+            top = y;
+            break;
+        }
+    }
+
+    // If no diff found, return None
+    if top == height {
+        return None;
+    }
+
+    // Find bottom row with diff (scan from bottom)
+    let mut bottom = top;
+    for y in (top..height).rev() {
+        let row_start = y * bytes_per_row;
+        let row_end = row_start + bytes_per_row;
+        if row_has_diff_scalar(
             &prev[row_start..row_end],
             &curr[row_start..row_end],
             threshold,
