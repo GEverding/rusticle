@@ -7,6 +7,8 @@ pub mod decode;
 pub mod encode;
 pub mod error;
 pub mod optimize;
+pub mod palette_lut;
+pub mod quality;
 pub mod resize;
 pub mod types;
 
@@ -14,4 +16,6 @@ pub mod types;
 pub mod async_io;
 
 pub use error::{Error, Result};
+pub use palette_lut::{PaletteLut, PaletteMapStats};
+pub use quality::QualityMetrics;
 pub use types::{DisposalMethod, Filter, Frame, Gif, LoopCount, OptLevel, Palette};

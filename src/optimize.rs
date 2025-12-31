@@ -56,6 +56,7 @@ impl Gif {
             global_palette: self.global_palette.clone(),
             frames: optimized_frames,
             loop_count: self.loop_count,
+            original_palette: self.original_palette.clone(),
         }
     }
 
@@ -118,6 +119,7 @@ impl Gif {
             global_palette: self.global_palette.clone(),
             frames: lossy_frames,
             loop_count: self.loop_count,
+            original_palette: self.original_palette.clone(),
         }
     }
 }
@@ -404,6 +406,7 @@ mod tests {
             global_palette: None,
             frames: vec![frame1.clone(), frame2],
             loop_count: crate::types::LoopCount::Infinite,
+            original_palette: None,
         };
 
         let optimized = gif.optimize(OptLevel::O1);
@@ -438,6 +441,7 @@ mod tests {
             global_palette: None,
             frames: vec![frame1, frame2],
             loop_count: crate::types::LoopCount::Infinite,
+            original_palette: None,
         };
 
         let optimized = gif.optimize(OptLevel::O1);
@@ -463,6 +467,7 @@ mod tests {
             global_palette: None,
             frames: vec![frame1, frame2],
             loop_count: crate::types::LoopCount::Infinite,
+            original_palette: None,
         };
 
         let optimized = gif.optimize(OptLevel::O1);
@@ -480,6 +485,7 @@ mod tests {
             global_palette: None,
             frames: vec![frame1.clone(), frame2],
             loop_count: crate::types::LoopCount::Infinite,
+            original_palette: None,
         };
 
         let lossy = gif.clone().lossy(80);
@@ -497,6 +503,7 @@ mod tests {
             global_palette: None,
             frames: vec![frame1, frame2.clone()],
             loop_count: crate::types::LoopCount::Infinite,
+            original_palette: None,
         };
 
         let lossy = gif.lossy(100);
@@ -515,6 +522,7 @@ mod tests {
             global_palette: None,
             frames: vec![frame1, frame2],
             loop_count: crate::types::LoopCount::Infinite,
+            original_palette: None,
         };
 
         let lossy = gif.lossy(0);
@@ -534,7 +542,7 @@ mod tests {
     fn test_lossy_threshold_calculation() {
         // New formula: threshold = (100 - quality) * 20 / 100
         // quality 80 = 4, quality 50 = 10, quality 0 = 20
-        
+
         let frame1 = make_frame(1, 1, [128, 128, 128, 255]);
         let frame2 = make_frame(1, 1, [130, 128, 128, 255]); // +2 red
 
@@ -544,6 +552,7 @@ mod tests {
             global_palette: None,
             frames: vec![frame1, frame2],
             loop_count: crate::types::LoopCount::Infinite,
+            original_palette: None,
         };
 
         // Quality 80: threshold = 4

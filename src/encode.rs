@@ -1,4 +1,5 @@
 use crate::error::{Error, Result};
+use crate::palette_lut::PaletteLut;
 use crate::types::{DisposalMethod, Gif};
 use std::io::Write;
 
@@ -41,9 +42,13 @@ impl Gif {
             .set_repeat(repeat)
             .map_err(|e| Error::EncodeError(format!("failed to set repeat: {}", e)))?;
 
+        // Build LUT once if we have original palette
+        let lut = self.original_palette.as_ref().map(|p| PaletteLut::new(p));
+        let lut_ref = lut.as_ref();
+
         // Encode each frame
         for frame in &self.frames {
-            encode_frame(&mut encoder, frame)?;
+            encode_frame(&mut encoder, frame, lut_ref)?;
         }
 
         Ok(())
@@ -53,10 +58,15 @@ impl Gif {
 fn encode_frame<W: Write>(
     encoder: &mut gif::Encoder<W>,
     frame: &crate::types::Frame,
+    lut: Option<&PaletteLut>,
 ) -> Result<()> {
     // Quantize RGBA to indexed color
-    let (palette, indexed, transparent_idx) =
-        quantize_rgba(&frame.pixels, frame.width as usize, frame.height as usize)?;
+    let (palette, indexed, transparent_idx) = quantize_rgba(
+        &frame.pixels,
+        frame.width as usize,
+        frame.height as usize,
+        lut,
+    )?;
 
     // Convert delay from Duration to gif units (10ms increments)
     let delay_ms = frame.delay.as_millis() as u16;
@@ -98,12 +108,60 @@ fn encode_frame<W: Write>(
     Ok(())
 }
 
-/// Quantize RGBA pixels to indexed color using imagequant.
+/// Try to encode frame using pre-built palette LUT.
+/// Returns None if quality is unacceptable (fallback to full quantization).
+fn try_fast_encode(rgba_pixels: &[u8], lut: &PaletteLut) -> Option<(Vec<u8>, Vec<u8>)> {
+    let (indices, stats) = lut.map_buffer(rgba_pixels);
+
+    if !stats.is_acceptable() {
+        return None; // Quality too low, fallback
+    }
+
+    // Convert palette to flat RGB format
+    let palette_rgb: Vec<u8> = lut
+        .palette()
+        .iter()
+        .flat_map(|c| c.iter().copied())
+        .collect();
+
+    Some((palette_rgb, indices))
+}
+
+/// Find transparent index by looking for low-alpha pixels in source.
+fn find_transparent_index(rgba_pixels: &[u8], indices: &[u8], palette: &[[u8; 3]]) -> Option<u8> {
+    // Look for pixels with alpha < 128 in the source
+    let mut transparent_pixels = std::collections::HashSet::new();
+    for (i, pixel) in rgba_pixels.chunks_exact(4).enumerate() {
+        if pixel[3] < 128 {
+            transparent_pixels.insert(indices[i]);
+        }
+    }
+
+    // If we found transparent pixels, pick the least-used palette color
+    if !transparent_pixels.is_empty() {
+        // Count usage of each palette color
+        let mut color_usage = vec![0usize; palette.len()];
+        for &idx in indices {
+            color_usage[idx as usize] += 1;
+        }
+
+        // Find least-used color among transparent pixels
+        transparent_pixels
+            .iter()
+            .min_by_key(|&&idx| color_usage[idx as usize])
+            .copied()
+    } else {
+        None
+    }
+}
+
+/// Quantize RGBA pixels to indexed color using imagequant or fast path.
 /// Returns (palette, indices, transparent_index).
 fn quantize_rgba(
     rgba_pixels: &[u8],
     width: usize,
     height: usize,
+    lut: Option<&PaletteLut>,
 ) -> Result<(Vec<u8>, Vec<u8>, Option<u8>)> {
     if rgba_pixels.len() != width * height * 4 {
         return Err(Error::EncodeError(format!(
@@ -111,6 +169,15 @@ fn quantize_rgba(
             width * height * 4,
             rgba_pixels.len()
         )));
+    }
+
+    // Try fast path if we have pre-built LUT
+    if let Some(lut) = lut {
+        if let Some((palette_rgb, indices)) = try_fast_encode(rgba_pixels, lut) {
+            // Find transparent index (look for low-alpha pixels in source)
+            let transparent_idx = find_transparent_index(rgba_pixels, &indices, lut.palette());
+            return Ok((palette_rgb, indices, transparent_idx));
+        }
     }
 
     // Convert raw bytes to RGBA structs
@@ -184,7 +251,7 @@ mod tests {
             255, 255, 0, 255, // Yellow
         ];
 
-        let result = quantize_rgba(&rgba_pixels, 2, 2);
+        let result = quantize_rgba(&rgba_pixels, 2, 2, None);
         assert!(result.is_ok(), "Should quantize valid RGBA data");
         let (palette, indexed, _) = result.unwrap();
         assert!(!palette.is_empty(), "Palette should not be empty");
@@ -194,14 +261,14 @@ mod tests {
     #[test]
     fn test_quantize_rgba_size_mismatch() {
         let rgba_pixels = vec![255, 0, 0, 255, 0, 255]; // Only 6 bytes, not 4*4=16
-        let result = quantize_rgba(&rgba_pixels, 2, 2);
+        let result = quantize_rgba(&rgba_pixels, 2, 2, None);
         assert!(result.is_err(), "Should error on size mismatch");
     }
 
     #[test]
     fn test_quantize_rgba_single_pixel() {
         let rgba_pixels = vec![128, 64, 32, 255];
-        let result = quantize_rgba(&rgba_pixels, 1, 1);
+        let result = quantize_rgba(&rgba_pixels, 1, 1, None);
         assert!(result.is_ok(), "Should quantize single pixel");
         let (palette, indexed, _) = result.unwrap();
         assert!(!palette.is_empty(), "Palette should not be empty");
@@ -218,7 +285,7 @@ mod tests {
             rgba_pixels.push(((i * 3) % 256) as u8);
             rgba_pixels.push(255);
         }
-        let result = quantize_rgba(&rgba_pixels, 10, 10);
+        let result = quantize_rgba(&rgba_pixels, 10, 10, None);
         assert!(result.is_ok(), "Should quantize large image");
         let (palette, indexed, _) = result.unwrap();
         assert!(!palette.is_empty(), "Palette should not be empty");
@@ -234,7 +301,7 @@ mod tests {
             255, 255, 0, 0, // Yellow (fully transparent)
         ];
 
-        let result = quantize_rgba(&rgba_pixels, 2, 2);
+        let result = quantize_rgba(&rgba_pixels, 2, 2, None);
         assert!(result.is_ok(), "Should quantize data with transparency");
         let (palette, indexed, transparent_idx) = result.unwrap();
         assert!(!palette.is_empty(), "Palette should not be empty");

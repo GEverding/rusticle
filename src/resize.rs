@@ -129,6 +129,7 @@ impl Gif {
             global_palette: self.global_palette.clone(),
             frames: resized_frames,
             loop_count: self.loop_count,
+            original_palette: self.original_palette.clone(),
         })
     }
 
@@ -213,6 +214,7 @@ mod tests {
             global_palette: None,
             frames: vec![frame],
             loop_count: crate::types::LoopCount::Infinite,
+            original_palette: None,
         };
 
         let resized = gif.resize(50, 50, Filter::Lanczos3).unwrap();
@@ -230,6 +232,7 @@ mod tests {
             global_palette: None,
             frames: vec![frame],
             loop_count: crate::types::LoopCount::Infinite,
+            original_palette: None,
         };
 
         let result = gif.resize(0, 50, Filter::Lanczos3);
@@ -245,6 +248,7 @@ mod tests {
             global_palette: None,
             frames: vec![frame],
             loop_count: crate::types::LoopCount::Infinite,
+            original_palette: None,
         };
 
         let result = gif.resize(50, 0, Filter::Lanczos3);
@@ -260,6 +264,7 @@ mod tests {
             global_palette: None,
             frames: vec![frame],
             loop_count: crate::types::LoopCount::Infinite,
+            original_palette: None,
         };
 
         let original_ratio = 200.0 / 100.0;
@@ -280,6 +285,7 @@ mod tests {
             global_palette: None,
             frames: vec![frame],
             loop_count: crate::types::LoopCount::Infinite,
+            original_palette: None,
         };
 
         let result = gif.resize_fit(0, 100, Filter::Lanczos3);
@@ -295,6 +301,7 @@ mod tests {
             global_palette: None,
             frames: vec![frame],
             loop_count: crate::types::LoopCount::Infinite,
+            original_palette: None,
         };
 
         let result = gif.resize_fit(100, 0, Filter::Lanczos3);
@@ -311,6 +318,7 @@ mod tests {
             global_palette: None,
             frames: vec![frame1, frame2],
             loop_count: crate::types::LoopCount::Infinite,
+            original_palette: None,
         };
 
         let resized = gif.resize(50, 50, Filter::Lanczos3).unwrap();
@@ -328,6 +336,7 @@ mod tests {
             global_palette: None,
             frames: vec![frame],
             loop_count: crate::types::LoopCount::Infinite,
+            original_palette: None,
         };
 
         let filters = [
@@ -353,6 +362,7 @@ mod tests {
             global_palette: None,
             frames: vec![frame],
             loop_count: crate::types::LoopCount::Infinite,
+            original_palette: None,
         };
 
         let resized = gif.resize(100, 100, Filter::Lanczos3).unwrap();
@@ -369,6 +379,7 @@ mod tests {
             global_palette: None,
             frames: vec![frame],
             loop_count: crate::types::LoopCount::Infinite,
+            original_palette: None,
         };
 
         let resized = gif.resize_fit(100, 100, Filter::Lanczos3).unwrap();
@@ -385,6 +396,7 @@ mod tests {
             global_palette: None,
             frames: vec![frame],
             loop_count: crate::types::LoopCount::Infinite,
+            original_palette: None,
         };
 
         let resized = gif.resize_fit(100, 100, Filter::Lanczos3).unwrap();

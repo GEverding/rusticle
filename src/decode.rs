@@ -111,6 +111,9 @@ impl Gif {
             Palette { colors }
         });
 
+        // Store original palette for fast resize path
+        let original_palette = global_palette.as_ref().map(|p| p.colors.clone());
+
         // Default loop count is infinite
         let loop_count = LoopCount::Infinite;
 
@@ -209,6 +212,7 @@ impl Gif {
             global_palette,
             frames,
             loop_count,
+            original_palette,
         })
     }
 }

@@ -13,6 +13,8 @@ pub struct Gif {
     pub frames: Vec<Frame>,
     /// Loop count for the animation.
     pub loop_count: LoopCount,
+    /// Original palette from decode (used for fast resize path).
+    pub original_palette: Option<Vec<[u8; 3]>>,
 }
 
 /// A single frame in a GIF animation.

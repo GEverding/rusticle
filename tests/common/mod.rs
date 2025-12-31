@@ -31,6 +31,7 @@ pub fn create_test_gif(width: u16, height: u16, frame_count: usize) -> Gif {
         global_palette: None,
         frames,
         loop_count: LoopCount::Infinite,
+        original_palette: None,
     }
 }
 
@@ -69,5 +70,6 @@ pub fn create_gradient_gif(width: u16, height: u16, frame_count: usize) -> Gif {
         global_palette: None,
         frames,
         loop_count: LoopCount::Infinite,
+        original_palette: None,
     }
 }
