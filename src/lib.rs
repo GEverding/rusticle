@@ -17,6 +17,7 @@ pub mod types;
 #[cfg(feature = "async")]
 pub mod async_io;
 
+pub use encode::EncodeStats;
 pub use error::{Error, Result};
 pub use palette_lut::{PaletteLut, PaletteMapStats};
 pub use quality::QualityMetrics;
