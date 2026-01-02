@@ -543,6 +543,135 @@ fn bench_exoquant_ordered_dither_400x400(c: &mut Criterion) {
     });
 }
 
+// Benchmark imagequant with different speed settings (1=slowest/best, 10=fastest)
+fn bench_imagequant_speed_1(c: &mut Criterion) {
+    let width = 400;
+    let height = 400;
+    let pixels = create_photo_like_image(width, height);
+
+    c.bench_function("quantize_imagequant_speed_1", |b| {
+        b.iter(|| {
+            let rgba_data: Vec<imagequant::RGBA> = pixels
+                .chunks_exact(4)
+                .map(|chunk| imagequant::RGBA {
+                    r: chunk[0],
+                    g: chunk[1],
+                    b: chunk[2],
+                    a: chunk[3],
+                })
+                .collect();
+
+            let mut attr = imagequant::Attributes::new();
+            attr.set_max_colors(256).unwrap();
+            attr.set_speed(1).unwrap(); // Slowest, best quality
+            attr.set_quality(0, 100).unwrap();
+
+            let mut img = attr
+                .new_image_borrowed(&rgba_data, width, height, 0.0)
+                .unwrap();
+            let mut result = attr.quantize(&mut img).unwrap();
+            result.set_dithering_level(1.0).unwrap();
+            let (_palette, _indices) = result.remapped(&mut img).unwrap();
+        })
+    });
+}
+
+fn bench_imagequant_speed_3(c: &mut Criterion) {
+    let width = 400;
+    let height = 400;
+    let pixels = create_photo_like_image(width, height);
+
+    c.bench_function("quantize_imagequant_speed_3_default", |b| {
+        b.iter(|| {
+            let rgba_data: Vec<imagequant::RGBA> = pixels
+                .chunks_exact(4)
+                .map(|chunk| imagequant::RGBA {
+                    r: chunk[0],
+                    g: chunk[1],
+                    b: chunk[2],
+                    a: chunk[3],
+                })
+                .collect();
+
+            let mut attr = imagequant::Attributes::new();
+            attr.set_max_colors(256).unwrap();
+            attr.set_speed(3).unwrap(); // Default
+            attr.set_quality(0, 100).unwrap();
+
+            let mut img = attr
+                .new_image_borrowed(&rgba_data, width, height, 0.0)
+                .unwrap();
+            let mut result = attr.quantize(&mut img).unwrap();
+            result.set_dithering_level(1.0).unwrap();
+            let (_palette, _indices) = result.remapped(&mut img).unwrap();
+        })
+    });
+}
+
+fn bench_imagequant_speed_10(c: &mut Criterion) {
+    let width = 400;
+    let height = 400;
+    let pixels = create_photo_like_image(width, height);
+
+    c.bench_function("quantize_imagequant_speed_10", |b| {
+        b.iter(|| {
+            let rgba_data: Vec<imagequant::RGBA> = pixels
+                .chunks_exact(4)
+                .map(|chunk| imagequant::RGBA {
+                    r: chunk[0],
+                    g: chunk[1],
+                    b: chunk[2],
+                    a: chunk[3],
+                })
+                .collect();
+
+            let mut attr = imagequant::Attributes::new();
+            attr.set_max_colors(256).unwrap();
+            attr.set_speed(10).unwrap(); // Fastest
+            attr.set_quality(0, 100).unwrap();
+
+            let mut img = attr
+                .new_image_borrowed(&rgba_data, width, height, 0.0)
+                .unwrap();
+            let mut result = attr.quantize(&mut img).unwrap();
+            result.set_dithering_level(1.0).unwrap();
+            let (_palette, _indices) = result.remapped(&mut img).unwrap();
+        })
+    });
+}
+
+// Benchmark different quality ranges
+fn bench_imagequant_quality_low(c: &mut Criterion) {
+    let width = 400;
+    let height = 400;
+    let pixels = create_photo_like_image(width, height);
+
+    c.bench_function("quantize_imagequant_quality_0_50", |b| {
+        b.iter(|| {
+            let rgba_data: Vec<imagequant::RGBA> = pixels
+                .chunks_exact(4)
+                .map(|chunk| imagequant::RGBA {
+                    r: chunk[0],
+                    g: chunk[1],
+                    b: chunk[2],
+                    a: chunk[3],
+                })
+                .collect();
+
+            let mut attr = imagequant::Attributes::new();
+            attr.set_max_colors(256).unwrap();
+            attr.set_quality(0, 50).unwrap(); // Lower quality acceptable
+
+            let mut img = attr
+                .new_image_borrowed(&rgba_data, width, height, 0.0)
+                .unwrap();
+            let mut result = attr.quantize(&mut img).unwrap();
+            result.set_dithering_level(1.0).unwrap();
+            let (_palette, _indices) = result.remapped(&mut img).unwrap();
+        })
+    });
+}
+
 criterion_group!(
     quantize_benches,
     bench_imagequant_200x200,
@@ -551,4 +680,8 @@ criterion_group!(
     bench_exoquant_400x400,
     bench_exoquant_no_kmeans_400x400,
     bench_exoquant_ordered_dither_400x400,
+    bench_imagequant_speed_1,
+    bench_imagequant_speed_3,
+    bench_imagequant_speed_10,
+    bench_imagequant_quality_low,
 );
