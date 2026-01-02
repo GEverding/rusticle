@@ -16,6 +16,7 @@ tikv-jemallocator = "0.6"
 
 [dev-dependencies]
 criterion = "0.5"
+exoquant = "0.2"
 
 [features]
 default = []

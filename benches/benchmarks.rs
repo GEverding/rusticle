@@ -142,7 +142,7 @@ criterion_group!(
     bench_lossy_80,
     bench_full_pipeline,
 );
-criterion_main!(benches, simd_benches);
+criterion_main!(benches, simd_benches, quantize_benches);
 
 // SIMD vs scalar benchmarks
 use rusticle::simd_opt::{
@@ -335,4 +335,220 @@ criterion_group!(
     bench_diff_bbox_simd_vs_scalar_small,
     bench_diff_bbox_simd_vs_scalar_medium,
     bench_diff_bbox_simd_vs_scalar_large,
+);
+
+// ============================================================================
+// Quantization benchmarks: exoquant vs imagequant
+// ============================================================================
+
+use exoquant::{convert_to_indexed, ditherer, optimizer, Color as ExoColor};
+
+/// Create realistic test image with gradients and varied colors
+fn create_test_image(width: usize, height: usize) -> Vec<u8> {
+    let mut pixels = Vec::with_capacity(width * height * 4);
+    for y in 0..height {
+        for x in 0..width {
+            // Create gradient with some variation
+            let r = ((x * 255) / width) as u8;
+            let g = ((y * 255) / height) as u8;
+            let b = (((x + y) * 127) / (width + height)) as u8;
+            pixels.extend_from_slice(&[r, g, b, 255]);
+        }
+    }
+    pixels
+}
+
+/// Create photographic-like test image with noise and color clusters
+fn create_photo_like_image(width: usize, height: usize) -> Vec<u8> {
+    let mut pixels = Vec::with_capacity(width * height * 4);
+    for y in 0..height {
+        for x in 0..width {
+            // Multiple color regions like a photo
+            let region_x = x * 4 / width;
+            let region_y = y * 4 / height;
+            let base = match (region_x + region_y * 4) % 8 {
+                0 => [180, 60, 60],   // Red-ish
+                1 => [60, 180, 60],   // Green-ish
+                2 => [60, 60, 180],   // Blue-ish
+                3 => [180, 180, 60],  // Yellow-ish
+                4 => [180, 60, 180],  // Magenta-ish
+                5 => [60, 180, 180],  // Cyan-ish
+                6 => [120, 120, 120], // Gray
+                _ => [200, 150, 100], // Skin tone-ish
+            };
+            // Add some variation within region
+            let noise = ((x * 7 + y * 13) % 30) as i16 - 15;
+            let r = (base[0] as i16 + noise).clamp(0, 255) as u8;
+            let g = (base[1] as i16 + noise).clamp(0, 255) as u8;
+            let b = (base[2] as i16 + noise).clamp(0, 255) as u8;
+            pixels.extend_from_slice(&[r, g, b, 255]);
+        }
+    }
+    pixels
+}
+
+fn bench_imagequant_200x200(c: &mut Criterion) {
+    let width = 200;
+    let height = 200;
+    let pixels = create_test_image(width, height);
+
+    c.bench_function("quantize_imagequant_200x200", |b| {
+        b.iter(|| {
+            let rgba_data: Vec<imagequant::RGBA> = pixels
+                .chunks_exact(4)
+                .map(|chunk| imagequant::RGBA {
+                    r: chunk[0],
+                    g: chunk[1],
+                    b: chunk[2],
+                    a: chunk[3],
+                })
+                .collect();
+
+            let mut attr = imagequant::Attributes::new();
+            attr.set_max_colors(256).unwrap();
+            attr.set_quality(0, 100).unwrap();
+
+            let mut img = attr
+                .new_image_borrowed(&rgba_data, width, height, 0.0)
+                .unwrap();
+            let mut result = attr.quantize(&mut img).unwrap();
+            result.set_dithering_level(1.0).unwrap();
+            let (_palette, _indices) = result.remapped(&mut img).unwrap();
+        })
+    });
+}
+
+fn bench_exoquant_200x200(c: &mut Criterion) {
+    let width = 200;
+    let height = 200;
+    let pixels = create_test_image(width, height);
+
+    c.bench_function("quantize_exoquant_200x200", |b| {
+        b.iter(|| {
+            let exo_pixels: Vec<ExoColor> = pixels
+                .chunks_exact(4)
+                .map(|chunk| ExoColor::new(chunk[0], chunk[1], chunk[2], chunk[3]))
+                .collect();
+
+            let (_palette, _indexed) = convert_to_indexed(
+                &exo_pixels,
+                width,
+                256,
+                &optimizer::KMeans,
+                &ditherer::FloydSteinberg::new(),
+            );
+        })
+    });
+}
+
+fn bench_imagequant_400x400(c: &mut Criterion) {
+    let width = 400;
+    let height = 400;
+    let pixels = create_photo_like_image(width, height);
+
+    c.bench_function("quantize_imagequant_400x400", |b| {
+        b.iter(|| {
+            let rgba_data: Vec<imagequant::RGBA> = pixels
+                .chunks_exact(4)
+                .map(|chunk| imagequant::RGBA {
+                    r: chunk[0],
+                    g: chunk[1],
+                    b: chunk[2],
+                    a: chunk[3],
+                })
+                .collect();
+
+            let mut attr = imagequant::Attributes::new();
+            attr.set_max_colors(256).unwrap();
+            attr.set_quality(0, 100).unwrap();
+
+            let mut img = attr
+                .new_image_borrowed(&rgba_data, width, height, 0.0)
+                .unwrap();
+            let mut result = attr.quantize(&mut img).unwrap();
+            result.set_dithering_level(1.0).unwrap();
+            let (_palette, _indices) = result.remapped(&mut img).unwrap();
+        })
+    });
+}
+
+fn bench_exoquant_400x400(c: &mut Criterion) {
+    let width = 400;
+    let height = 400;
+    let pixels = create_photo_like_image(width, height);
+
+    c.bench_function("quantize_exoquant_400x400", |b| {
+        b.iter(|| {
+            let exo_pixels: Vec<ExoColor> = pixels
+                .chunks_exact(4)
+                .map(|chunk| ExoColor::new(chunk[0], chunk[1], chunk[2], chunk[3]))
+                .collect();
+
+            let (_palette, _indexed) = convert_to_indexed(
+                &exo_pixels,
+                width,
+                256,
+                &optimizer::KMeans,
+                &ditherer::FloydSteinberg::new(),
+            );
+        })
+    });
+}
+
+// Also benchmark exoquant without k-means optimization (faster but lower quality)
+fn bench_exoquant_no_kmeans_400x400(c: &mut Criterion) {
+    let width = 400;
+    let height = 400;
+    let pixels = create_photo_like_image(width, height);
+
+    c.bench_function("quantize_exoquant_no_kmeans_400x400", |b| {
+        b.iter(|| {
+            let exo_pixels: Vec<ExoColor> = pixels
+                .chunks_exact(4)
+                .map(|chunk| ExoColor::new(chunk[0], chunk[1], chunk[2], chunk[3]))
+                .collect();
+
+            let (_palette, _indexed) = convert_to_indexed(
+                &exo_pixels,
+                width,
+                256,
+                &optimizer::None, // No k-means optimization
+                &ditherer::FloydSteinberg::new(),
+            );
+        })
+    });
+}
+
+// Benchmark with ordered dithering (faster than Floyd-Steinberg)
+fn bench_exoquant_ordered_dither_400x400(c: &mut Criterion) {
+    let width = 400;
+    let height = 400;
+    let pixels = create_photo_like_image(width, height);
+
+    c.bench_function("quantize_exoquant_ordered_400x400", |b| {
+        b.iter(|| {
+            let exo_pixels: Vec<ExoColor> = pixels
+                .chunks_exact(4)
+                .map(|chunk| ExoColor::new(chunk[0], chunk[1], chunk[2], chunk[3]))
+                .collect();
+
+            let (_palette, _indexed) = convert_to_indexed(
+                &exo_pixels,
+                width,
+                256,
+                &optimizer::KMeans,
+                &ditherer::Ordered,
+            );
+        })
+    });
+}
+
+criterion_group!(
+    quantize_benches,
+    bench_imagequant_200x200,
+    bench_exoquant_200x200,
+    bench_imagequant_400x400,
+    bench_exoquant_400x400,
+    bench_exoquant_no_kmeans_400x400,
+    bench_exoquant_ordered_dither_400x400,
 );
