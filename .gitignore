@@ -1,5 +1,6 @@
 /target
 test_gifs/
 outputs/
+samples/
 .DS_Store
 bench_results.jsonl
