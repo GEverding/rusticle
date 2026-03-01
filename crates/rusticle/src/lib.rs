@@ -17,6 +17,9 @@ pub mod types;
 #[cfg(feature = "async")]
 pub mod async_io;
 
+#[cfg(feature = "image")]
+pub mod image_compat;
+
 pub use encode::EncodeStats;
 pub use error::{Error, Result};
 pub use palette_lut::{PaletteLut, PaletteMapStats};

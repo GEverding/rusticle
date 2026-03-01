@@ -11,6 +11,7 @@ imagequant = "4"
 fast_image_resize = "5"
 rayon = "1.10"
 serde = { version = "1", features = ["derive"], optional = true }
+image = { version = "0.25", optional = true, default-features = false }
 
 [dev-dependencies]
 criterion = "0.5"
@@ -20,6 +21,7 @@ exoquant = "0.2"
 default = []
 async = ["tokio"]
 serde = ["dep:serde"]
+image = ["dep:image"]
 
 [[bench]]
 name = "benchmarks"
