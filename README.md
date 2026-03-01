@@ -2,6 +2,8 @@
 
 High-performance GIF resize, optimize, and encode library.
 
+> **Alpha software.** API may change. Not validated at scale or across diverse GIF inputs. Use at your own risk.
+
 ## What it does
 
 Rust library and CLI for decoding, resizing, optimizing, and encoding GIF images. 3–6x faster than gifsicle on tested inputs. Produces comparable or smaller output files.
