@@ -47,7 +47,10 @@ impl Gif {
             global_palette: self.global_palette.clone(),
             frames: optimized_frames,
             loop_count: self.loop_count,
-            original_palette: self.original_palette.clone(),
+            // Optimization changes pixel content and can introduce sparse/cropped frames,
+            // so the decode-time source palette is no longer a reliable fast-path palette.
+            // Force re-quantization on encode to avoid stale-palette quality collapse.
+            original_palette: None,
         }
     }
 
@@ -78,6 +81,18 @@ impl Gif {
             return self.clone();
         }
 
+        // Lossy diffing assumes each frame buffer covers the same canvas region.
+        // For pre-cropped/sub-frame data (e.g. output of optimize O3), a second
+        // diff pass can compare spatially mismatched buffers and over-remove detail.
+        // In that case, keep current frames unchanged.
+        let has_subframes = self
+            .frames
+            .iter()
+            .any(|f| f.left != 0 || f.top != 0 || f.width != self.width || f.height != self.height);
+        if has_subframes {
+            return self;
+        }
+
         // Clamp quality to 0-100 range
         let quality = quality.min(100);
 
@@ -95,7 +110,9 @@ impl Gif {
             global_palette: self.global_palette.clone(),
             frames: lossy_frames,
             loop_count: self.loop_count,
-            original_palette: self.original_palette.clone(),
+            // Lossy modifies frame pixels by thresholding to transparency.
+            // Keep encode quality stable by disabling stale decode-palette fast path.
+            original_palette: None,
         }
     }
 }
@@ -126,8 +143,14 @@ fn optimize_frame_internal(
     threshold: u8,
     crop_to_bbox: bool,
 ) -> Frame {
-    // Only optimize if frames have compatible dimensions
-    if frame.width != prev_frame.width || frame.height != prev_frame.height {
+    // Only optimize if frames represent the same region.
+    // For cropped/sub-frame pipelines, same dimensions are not enough:
+    // left/top must also match, otherwise pixel-wise comparison is spatially invalid.
+    if frame.width != prev_frame.width
+        || frame.height != prev_frame.height
+        || frame.left != prev_frame.left
+        || frame.top != prev_frame.top
+    {
         let mut optimized = frame.clone();
         optimized.dispose = DisposalMethod::Keep;
         return optimized;
@@ -586,5 +609,107 @@ mod tests {
         assert_eq!(optimized.frames[1].width, 1);
         assert_eq!(optimized.frames[1].height, 1);
         assert_eq!(optimized.frames[1].pixels.len(), 4); // 1x1 RGBA
+    }
+
+    #[test]
+    fn test_optimize_clears_original_palette_for_safe_requantization() {
+        let frame1 = make_frame(2, 2, [255, 0, 0, 255]);
+        let frame2 = make_frame(2, 2, [0, 255, 0, 255]);
+
+        let gif = Gif {
+            width: 2,
+            height: 2,
+            global_palette: None,
+            frames: vec![frame1, frame2],
+            loop_count: crate::types::LoopCount::Infinite,
+            original_palette: Some(vec![[255, 0, 0], [0, 255, 0]]),
+        };
+
+        let optimized = gif.optimize(OptLevel::O3);
+        assert!(optimized.original_palette.is_none());
+    }
+
+    #[test]
+    fn test_lossy_clears_original_palette_for_safe_requantization() {
+        let frame1 = make_frame(2, 2, [255, 0, 0, 255]);
+        let frame2 = make_frame(2, 2, [254, 1, 1, 255]);
+
+        let gif = Gif {
+            width: 2,
+            height: 2,
+            global_palette: None,
+            frames: vec![frame1, frame2],
+            loop_count: crate::types::LoopCount::Infinite,
+            original_palette: Some(vec![[255, 0, 0], [0, 255, 0]]),
+        };
+
+        let lossy = gif.lossy(80);
+        assert!(lossy.original_palette.is_none());
+    }
+
+    #[test]
+    fn test_optimize_skips_misaligned_subframes() {
+        let prev_frame = Frame {
+            pixels: vec![
+                255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255,
+            ],
+            delay: Duration::from_millis(100),
+            dispose: DisposalMethod::Keep,
+            local_palette: None,
+            left: 0,
+            top: 0,
+            width: 2,
+            height: 2,
+        };
+
+        let frame = Frame {
+            pixels: vec![
+                0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255,
+            ],
+            delay: Duration::from_millis(100),
+            dispose: DisposalMethod::Keep,
+            local_palette: None,
+            left: 1,
+            top: 0,
+            width: 2,
+            height: 2,
+        };
+
+        let optimized = optimize_frame_internal(&frame, &prev_frame, 8, true);
+        assert_eq!(optimized.pixels, frame.pixels);
+        assert_eq!(optimized.left, frame.left);
+        assert_eq!(optimized.top, frame.top);
+        assert_eq!(optimized.width, frame.width);
+        assert_eq!(optimized.height, frame.height);
+    }
+
+    #[test]
+    fn test_lossy_noop_on_subframes() {
+        let frame = Frame {
+            pixels: vec![
+                0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255,
+            ],
+            delay: Duration::from_millis(100),
+            dispose: DisposalMethod::Keep,
+            local_palette: None,
+            left: 1,
+            top: 0,
+            width: 2,
+            height: 2,
+        };
+
+        let gif = Gif {
+            width: 4,
+            height: 4,
+            global_palette: None,
+            frames: vec![frame.clone()],
+            loop_count: crate::types::LoopCount::Infinite,
+            original_palette: Some(vec![[0, 255, 0]]),
+        };
+
+        let lossy = gif.lossy(80);
+        assert_eq!(lossy.frames[0].pixels, frame.pixels);
+        assert_eq!(lossy.frames[0].left, 1);
+        assert_eq!(lossy.frames[0].top, 0);
     }
 }
