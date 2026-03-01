@@ -1,0 +1,16 @@
+[package]
+name = "rusticle-cli"
+version.workspace = true
+edition.workspace = true
+description = "High-performance GIF resize and optimization CLI"
+
+[[bin]]
+name = "rusticle"
+path = "src/main.rs"
+
+[dependencies]
+rusticle = { path = "../rusticle" }
+clap = { version = "4.5", features = ["derive"] }
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.6"

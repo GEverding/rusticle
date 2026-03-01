@@ -1,0 +1,16 @@
+[package]
+name = "rusticle-bench"
+version.workspace = true
+edition.workspace = true
+publish = false
+description = "Internal regression benchmark suite for rusticle"
+
+[[bin]]
+name = "rusticle-bench"
+path = "src/main.rs"
+
+[dependencies]
+rusticle = { path = "../rusticle", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }

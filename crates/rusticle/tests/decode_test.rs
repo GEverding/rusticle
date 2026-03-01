@@ -18,7 +18,13 @@ fn test_decode_from_read() {
 #[test]
 fn test_compositing_produces_full_frames() {
     // Load a real GIF and verify frames are composited to full canvas size
-    let data = std::fs::read("outputs/original_test3.gif").expect("test file should exist");
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap();
+    let data = std::fs::read(workspace_root.join("outputs/original_test3.gif"))
+        .expect("test file should exist");
     let gif = Gif::from_bytes(&data).expect("should decode");
 
     // All frames should now be full canvas size (composited)

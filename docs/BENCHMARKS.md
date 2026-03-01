@@ -118,20 +118,32 @@ Typical fast path stats on cartoon GIFs:
 # Download test suite
 python3 scripts/download_test_gifs.py
 
-# Build release
-cargo build --release
+# Build CLI release binary
+cargo build --release -p rusticle-cli
 
-# Resize benchmark (fast path)
+# Resize benchmark
 ./target/release/rusticle resize test_gifs/benchmark_suite/photo_01.gif /tmp/out.gif
 time gifsicle --resize 320x240 test_gifs/benchmark_suite/photo_01.gif -o /tmp/g.gif
 
-# Full pipeline benchmark  
-./target/release/rusticle all test_gifs/test3.gif /tmp/out.gif
-time gifsicle --resize 320x240 -O3 --lossy=80 test_gifs/test3.gif -o /tmp/g.gif
-
-# Compare sizes
-ls -lh /tmp/out.gif /tmp/g.gif
+# Run full regression benchmark suite
+cargo run --release -p rusticle-bench
 ```
+
+## Stable Regression Workflow
+
+Use a curated baseline in git and keep raw run logs out of git.
+
+```bash
+# Run side-by-side benchmark suite (rusticle vs gifsicle)
+cargo run --release -p rusticle-bench
+
+# Validate latest run against curated baseline tolerances
+python3 scripts/check_benchmark_baseline.py
+```
+
+Files:
+- Baseline: `docs/bench_baseline.json`
+- Raw run log: `outputs/bench_results.jsonl` (ignored by git)
 
 ## Summary
 

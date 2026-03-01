@@ -4,6 +4,7 @@
 
 /// Quality metrics comparing two images.
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct QualityMetrics {
     /// Peak Signal-to-Noise Ratio (dB). Higher is better.
     /// Typical values: 30-50 dB for good quality.

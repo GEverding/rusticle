@@ -1,42 +1,18 @@
-[package]
-name = "rusticle"
+[workspace]
+resolver = "2"
+members = [
+    "crates/rusticle",
+    "crates/rusticle-bench",
+    "crates/rusticle-cli",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+repository = "https://github.com/geverding/rusticle"
 
-[dependencies]
-gif = "0.13"
-thiserror = "1.0"
-tokio = { version = "1", features = ["rt", "io-util"], optional = true }
-imagequant = "4"
-fast_image_resize = "5"
-rayon = "1.10"
-
-[target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = "0.6"
-
-[dev-dependencies]
-criterion = "0.5"
-exoquant = "0.2"
-
-[features]
-default = []
-async = ["tokio"]
-
-[[bench]]
-name = "benchmarks"
-harness = false
-
-[dependencies.serde]
-version = "1"
-features = ["derive"]
-
-[dependencies.serde_json]
-version = "1"
-
-[dependencies.chrono]
-version = "0.4"
-features = ["serde"]
-
-[[bin]]
-name = "bench"
-path = "benches/regression_bench.rs"
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = "symbols"

@@ -10,6 +10,7 @@ use std::time::Instant;
 
 /// Statistics from GIF encoding, measuring time spent in each stage.
 #[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct EncodeStats {
     /// Time spent building the palette LUT (nanoseconds).
     pub lut_build_ns: u64,

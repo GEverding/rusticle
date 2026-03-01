@@ -47,6 +47,7 @@ pub struct Palette {
 
 /// Loop count for GIF animation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum LoopCount {
     /// Loop infinitely.
     Infinite,
@@ -56,6 +57,7 @@ pub enum LoopCount {
 
 /// Frame disposal method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum DisposalMethod {
     /// No disposal specified.
     None,
@@ -69,6 +71,7 @@ pub enum DisposalMethod {
 
 /// Resize filter algorithm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Filter {
     /// Nearest neighbor (fastest, lowest quality).
     Nearest,
@@ -82,6 +85,7 @@ pub enum Filter {
 
 /// Optimization level for frame optimization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum OptLevel {
     /// Basic optimization - exact pixel match only.
     O1,

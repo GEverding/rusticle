@@ -5,42 +5,53 @@ High-performance GIF processing library for decoding, resizing, optimizing, and 
 ## Build & Test
 
 ```bash
-cargo check                          # Check compilation
-cargo build --release                # Build release
-cargo build --features async         # Build with async feature
+cargo check                              # Check all crates
+cargo check -p rusticle                  # Check library only
+cargo build --release -p rusticle-cli    # Build CLI binary
 
-cargo test                           # Run all tests
-cargo test test_decode_empty_bytes   # Single test by name
-cargo test decode::tests             # Tests in specific module
-cargo test resize                    # Tests matching pattern
-cargo test --test integration        # Integration tests only
-cargo test -- --nocapture            # With output
+cargo test -p rusticle                   # Library tests
+cargo test -p rusticle --lib             # Unit tests only
+cargo test -p rusticle test_decode_empty # Single test by name
 
-cargo clippy -- -D warnings          # Lint (required)
-cargo fmt                            # Format
+cargo clippy --workspace -- -D warnings  # Lint all crates
+cargo fmt --all                          # Format all crates
 
-cargo bench                          # All benchmarks
-cargo bench resize_lanczos           # Specific benchmark
+cargo run -p rusticle-bench              # Run regression benchmarks
+cargo bench -p rusticle                  # criterion benchmarks
 ```
 
 ## Project Structure
 
 ```
-src/
-├── lib.rs       # Public API, re-exports
-├── main.rs      # CLI binary
-├── decode.rs    # GIF decoding with compositing
-├── encode.rs    # GIF encoding with quantization
-├── resize.rs    # Frame resizing (fast_image_resize)
-├── optimize.rs  # Frame optimization, lossy compression
-├── types.rs     # Core types: Gif, Frame, Palette, etc.
-├── error.rs     # Error types via thiserror
-└── async_io.rs  # Async I/O (optional "async" feature)
+crates/
+├── rusticle/              # Library crate
+│   ├── src/
+│   │   ├── lib.rs         # Public API, re-exports
+│   │   ├── decode.rs      # GIF decoding with compositing
+│   │   ├── encode.rs      # GIF encoding with quantization
+│   │   ├── resize.rs      # Frame resizing (fast_image_resize)
+│   │   ├── optimize.rs    # Frame optimization, lossy compression
+│   │   ├── types.rs       # Core types: Gif, Frame, Palette, etc.
+│   │   ├── error.rs       # Error types via thiserror
+│   │   ├── quality.rs     # PSNR/SSIM quality metrics
+│   │   ├── palette_lut.rs # Palette LUT for fast color mapping
+│   │   ├── simd_opt.rs    # SIMD-accelerated pixel operations
+│   │   └── async_io.rs    # Async I/O (optional "async" feature)
+│   ├── tests/             # Integration tests
+│   ├── benches/           # criterion benchmarks
+│   └── examples/          # Library examples
+├── rusticle-cli/          # CLI binary crate
+│   └── src/main.rs        # clap-based resize/quality CLI
+└── rusticle-bench/        # Internal benchmark crate (publish=false)
+    └── src/main.rs        # Regression bench vs gifsicle
 
-tests/
-├── integration.rs  # Full pipeline tests
-├── decode_test.rs  # Decoder tests
-└── common/mod.rs   # Test helpers
+scripts/
+├── download_test_gifs.py
+└── check_benchmark_baseline.py
+
+docs/
+├── BENCHMARKS.md
+└── bench_baseline.json
 ```
 
 ## Error Handling
@@ -130,13 +141,15 @@ mod tests {
 
 | Crate | Purpose |
 |-------|---------|
-| gif | GIF encode/decode |
-| thiserror | Error derive |
-| imagequant | Color quantization |
-| fast_image_resize | Frame resizing |
-| rayon | Parallel processing |
-| tikv-jemallocator | Memory allocator |
-| criterion | Benchmarking |
+| gif | GIF encode/decode (library) |
+| thiserror | Error derive (library) |
+| imagequant | Color quantization (library) |
+| fast_image_resize | Frame resizing (library) |
+| rayon | Parallel processing (library) |
+| clap | CLI argument parsing (rusticle-cli) |
+| tikv-jemallocator | Memory allocator (rusticle-cli) |
+| serde/chrono | Benchmark serialization (rusticle-bench) |
+| criterion | Benchmarking (library dev-dep) |
 
 ## Common Patterns
 

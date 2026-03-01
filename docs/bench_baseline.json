@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "description": "Curated benchmark baseline for rusticle vs gifsicle comparisons.",
+  "target_resize": {
+    "width": 320,
+    "height": 240
+  },
+  "generated_from": {
+    "commit": "7c80f67",
+    "timestamp": "2026-02-29T00:00:00Z",
+    "command": "cargo run --release --bin bench"
+  },
+  "default_tolerances": {
+    "max_slowdown_pct": 20.0,
+    "max_speedup_drop_pct": 20.0,
+    "max_psnr_drop": 1.0,
+    "max_ssim_drop": 0.01
+  },
+  "aggregates": {
+    "avg_speedup_vs_gifsicle": 5.995564777083797,
+    "avg_psnr": 44.182415675827315,
+    "avg_ssim": 0.9978199015937469
+  },
+  "cases": [
+    {
+      "test_file": "cartoon_01.gif",
+      "operation": "resize",
+      "rusticle_total_ms": 92.75954099999998,
+      "gifsicle_total_ms": 476.70687499999997,
+      "speedup": 5.139489609948433,
+      "rusticle_avg_psnr": 40.86050210836297,
+      "rusticle_avg_ssim": 0.9989716392707688,
+      "rusticle_compression_ratio": 0.7344851211302525
+    },
+    {
+      "test_file": "cartoon_01.gif",
+      "operation": "all",
+      "rusticle_total_ms": 136.57762400000001,
+      "gifsicle_total_ms": 1589.208959,
+      "speedup": 11.63614908939999,
+      "rusticle_avg_psnr": 34.88232207775869,
+      "rusticle_avg_ssim": 0.9931349194429123,
+      "rusticle_compression_ratio": 0.29843873060516996
+    },
+    {
+      "test_file": "photo_01.gif",
+      "operation": "resize",
+      "rusticle_total_ms": 182.320541,
+      "gifsicle_total_ms": 994.690667,
+      "speedup": 5.455385728037127,
+      "rusticle_avg_psnr": 40.44794572810209,
+      "rusticle_avg_ssim": 0.9992071701935082,
+      "rusticle_compression_ratio": 0.8335376491025916
+    },
+    {
+      "test_file": "photo_01.gif",
+      "operation": "all",
+      "rusticle_total_ms": 309.588833,
+      "gifsicle_total_ms": 3057.3084169999997,
+      "speedup": 9.875337613553748,
+      "rusticle_avg_psnr": 37.37201562692059,
+      "rusticle_avg_ssim": 0.9971307195869176,
+      "rusticle_compression_ratio": 0.5826607150771119
+    },
+    {
+      "test_file": "cartoon_02.gif",
+      "operation": "resize",
+      "rusticle_total_ms": 11.305001,
+      "gifsicle_total_ms": 11.445542,
+      "speedup": 1.0124298071273955,
+      "rusticle_avg_psnr": 54.664767236629956,
+      "rusticle_avg_ssim": 0.9993766061238273,
+      "rusticle_compression_ratio": 2.1779458097038438
+    },
+    {
+      "test_file": "cartoon_02.gif",
+      "operation": "all",
+      "rusticle_total_ms": 5.896083,
+      "gifsicle_total_ms": 16.831792,
+      "speedup": 2.8545968144360984,
+      "rusticle_avg_psnr": 56.866941277189596,
+      "rusticle_avg_ssim": 0.999098354944547,
+      "rusticle_compression_ratio": 2.743793320730939
+    }
+  ]
+}
