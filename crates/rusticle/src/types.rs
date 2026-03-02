@@ -1,3 +1,9 @@
+//! Core types for GIF representation.
+//!
+//! [`Gif`] is the top-level container holding canvas dimensions, palette, and [`Frame`]s.
+//! Methods for decode, resize, optimize, and encode are implemented on `Gif` in their
+//! respective modules.
+
 use std::time::Duration;
 
 /// A decoded GIF with all its frames.

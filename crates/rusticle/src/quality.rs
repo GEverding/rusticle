@@ -28,10 +28,30 @@ pub struct QualityMetrics {
 }
 
 impl QualityMetrics {
-    /// Compare two RGBA buffers of the same dimensions.
+    /// Compare two RGBA buffers and compute quality metrics.
+    ///
+    /// Both buffers must have the same length and be RGBA (4 bytes per pixel).
+    /// Computes PSNR, SSIM, MSE, and color distance metrics over RGB channels
+    /// (alpha is ignored).
     ///
     /// # Panics
-    /// Panics if buffers have different lengths.
+    ///
+    /// Panics if buffers have different lengths or length is not a multiple of 4.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use rusticle::QualityMetrics;
+    ///
+    /// let original = std::fs::read("original.raw")?;
+    /// let processed = std::fs::read("processed.raw")?;
+    /// let metrics = QualityMetrics::compare(&original, &processed);
+    ///
+    /// println!("PSNR: {:.1} dB, SSIM: {:.4}", metrics.psnr, metrics.ssim);
+    /// if metrics.is_good() {
+    ///     println!("Quality: GOOD");
+    /// }
+    /// ```
     #[must_use]
     pub fn compare(original: &[u8], processed: &[u8]) -> Self {
         assert_eq!(original.len(), processed.len(), "Buffer size mismatch");

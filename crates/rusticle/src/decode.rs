@@ -1,3 +1,8 @@
+//! GIF decoding with canvas compositing.
+//!
+//! Handles frame disposal methods, alpha blending, and subframe positioning
+//! to produce full-canvas RGBA frames.
+
 use std::io::Read;
 use std::time::Duration;
 
@@ -86,11 +91,47 @@ fn clear_region(
 
 impl Gif {
     /// Decode a GIF from a byte slice.
+    ///
+    /// Reads the entire GIF, compositing each frame onto a canvas according to
+    /// the disposal method. Returns a [`Gif`] with full-canvas RGBA frames.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::DecodeError`] if the data is not a valid GIF or contains
+    /// malformed frame data.
+    ///
+    /// Returns [`Error::InvalidGif`] if the GIF header is missing or corrupt.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use rusticle::Gif;
+    ///
+    /// let data = std::fs::read("animation.gif")?;
+    /// let gif = Gif::from_bytes(&data)?;
+    /// println!("{}x{}, {} frames", gif.width, gif.height, gif.frames.len());
+    /// ```
     pub fn from_bytes(data: &[u8]) -> Result<Self> {
         Self::from_read(data)
     }
 
-    /// Decode a GIF from any Read implementation.
+    /// Decode a GIF from any [`Read`] implementation.
+    ///
+    /// Same as [`from_bytes`](Self::from_bytes) but accepts a reader (file, network stream, etc.).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::DecodeError`] if the stream does not contain a valid GIF.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use rusticle::Gif;
+    /// use std::fs::File;
+    ///
+    /// let file = File::open("animation.gif")?;
+    /// let gif = Gif::from_read(file)?;
+    /// ```
     pub fn from_read<R: Read>(reader: R) -> Result<Self> {
         let mut decoder = gif::DecodeOptions::new();
         decoder.set_color_output(gif::ColorOutput::RGBA);

@@ -1,3 +1,8 @@
+//! Frame resizing using the `fast_image_resize` crate.
+//!
+//! Supports exact dimensions ([`Gif::resize`]) and aspect-ratio-preserving
+//! fit ([`Gif::resize_fit`]). Frames are processed in parallel via rayon.
+
 use crate::{Error, Filter, Frame, Gif};
 use fast_image_resize::{self as fir, images::Image, PixelType, ResizeOptions, Resizer};
 use rayon::prelude::*;

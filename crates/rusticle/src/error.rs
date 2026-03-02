@@ -1,3 +1,5 @@
+//! Error types for GIF processing operations.
+
 use std::io;
 use thiserror::Error;
 

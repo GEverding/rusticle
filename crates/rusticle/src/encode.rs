@@ -43,37 +43,60 @@ struct QuantizedFrame {
 type QuantizeResult = (Vec<u8>, Vec<u8>, Option<u8>, bool);
 
 impl Gif {
-    /// Encode to bytes (convenience method).
+    /// Encode the GIF to bytes.
+    ///
+    /// Quantizes all frames in parallel (using rayon), then writes them sequentially.
+    /// Uses the palette LUT fast path when a global palette is available, falling back
+    /// to imagequant if quality would be insufficient.
     ///
     /// # Errors
-    /// Returns `Error::EncodeError` if encoding fails.
+    ///
+    /// Returns [`Error::EncodeError`] if quantization or GIF writing fails.
     ///
     /// # Example
-    /// ```ignore
-    /// let bytes = gif
-    ///     .resize(640, 480, Filter::Lanczos3)?
-    ///     .optimize(OptLevel::O3)
-    ///     .lossy(80)
-    ///     .into_bytes()?;
-    /// ```
-    /// Encode to bytes.
     ///
-    /// # Errors
-    /// Returns `Error::EncodeError` if encoding fails.
+    /// ```ignore
+    /// use rusticle::{Gif, Filter, OptLevel};
+    ///
+    /// let gif = Gif::from_bytes(&data)?;
+    /// let bytes = gif
+    ///     .resize(320, 240, Filter::Lanczos3)?
+    ///     .optimize(OptLevel::O2)
+    ///     .to_bytes()?;
+    /// std::fs::write("output.gif", bytes)?;
+    /// ```
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
         let mut buffer = Vec::new();
         self.encode_to(&mut buffer)?;
         Ok(buffer)
     }
 
+    /// Encode the GIF to bytes, consuming `self`.
+    ///
+    /// Equivalent to [`to_bytes`](Self::to_bytes). Provided for method chaining.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::EncodeError`] if encoding fails.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let bytes = Gif::from_bytes(&data)?
+    ///     .resize(320, 240, Filter::Lanczos3)?
+    ///     .into_bytes()?;
+    /// ```
     pub fn into_bytes(self) -> Result<Vec<u8>> {
         self.to_bytes()
     }
 
     /// Encode to bytes and return timing statistics.
     ///
+    /// Returns both the encoded bytes and [`EncodeStats`] with per-stage timing.
+    ///
     /// # Errors
-    /// Returns `Error::EncodeError` if encoding fails.
+    ///
+    /// Returns [`Error::EncodeError`] if encoding fails.
     pub fn to_bytes_with_stats(&self) -> Result<(Vec<u8>, EncodeStats)> {
         let total_start = Instant::now();
         let mut buffer = Vec::new();
@@ -84,7 +107,20 @@ impl Gif {
         Ok((bytes, stats))
     }
 
-    /// Encode to any Write implementation.
+    /// Encode the GIF to any [`Write`] implementation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::EncodeError`] if quantization or writing fails.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use std::fs::File;
+    ///
+    /// let mut file = File::create("output.gif")?;
+    /// gif.encode_to(&mut file)?;
+    /// ```
     pub fn encode_to<W: Write>(&self, writer: W) -> Result<()> {
         let mut encoder = gif::Encoder::new(writer, self.width, self.height, &[])
             .map_err(|e| Error::EncodeError(format!("failed to create encoder: {}", e)))?;
@@ -117,7 +153,13 @@ impl Gif {
         Ok(())
     }
 
-    /// Encode to any Write implementation with timing statistics.
+    /// Encode to any [`Write`] implementation, returning [`EncodeStats`].
+    ///
+    /// Reports timing for LUT build, quantization, and frame writing stages.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::EncodeError`] if quantization or writing fails.
     pub fn encode_to_with_stats<W: Write>(&self, writer: W) -> Result<EncodeStats> {
         let mut stats = EncodeStats::default();
         let mut encoder = gif::Encoder::new(writer, self.width, self.height, &[])

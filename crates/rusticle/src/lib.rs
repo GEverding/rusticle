@@ -1,8 +1,28 @@
 #![feature(portable_simd)]
-//! rusticle - High-performance GIF processing library.
+//! High-performance GIF processing library.
 //!
-//! A Rust library for decoding, processing, and encoding GIF images.
-//! Inspired by gifsicle, with support for resizing, optimization, and lossy compression.
+//! Decode, resize, optimize, and encode GIF images. 3–6× faster than gifsicle
+//! on tested inputs.
+//!
+//! # Example
+//!
+//! ```ignore
+//! use rusticle::{Gif, Filter, OptLevel};
+//!
+//! let data = std::fs::read("input.gif")?;
+//! let bytes = Gif::from_bytes(&data)?
+//!     .resize(640, 480, Filter::Lanczos3)?
+//!     .optimize(OptLevel::O2)
+//!     .lossy(80)
+//!     .to_bytes()?;
+//! std::fs::write("output.gif", bytes)?;
+//! ```
+//!
+//! # Feature flags
+//!
+//! - **`async`** — Async I/O via tokio (`Gif::from_async_read`, `Gif::encode_to_async_write`)
+//! - **`serde`** — Serialize/deserialize `Filter`, `OptLevel`, `QualityMetrics`, etc.
+//! - **`image`** — Conversions between `Frame`/`Gif` and `image::RgbaImage`
 
 pub mod decode;
 pub mod encode;

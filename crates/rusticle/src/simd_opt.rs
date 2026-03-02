@@ -5,17 +5,35 @@
 
 use std::simd::{cmp::SimdOrd, cmp::SimdPartialOrd, u8x16, Mask};
 
-/// Rectangle representing a diff region.
+/// Bounding box of the region that differs between two frames.
+///
+/// Returned by [`find_diff_bounding_box`]. Coordinates are in pixels
+/// relative to the canvas origin.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DiffRect {
+    /// Horizontal offset of the diff region (pixels from left edge).
     pub left: u16,
+    /// Vertical offset of the diff region (pixels from top edge).
     pub top: u16,
+    /// Width of the diff region in pixels.
     pub width: u16,
+    /// Height of the diff region in pixels.
     pub height: u16,
 }
 
-/// Process pixels using 16-byte SIMD (4 pixels at a time).
-/// Uses bitmask operations for faster pixel-level checks.
+/// Mark unchanged pixels as transparent using SIMD comparison.
+///
+/// Compares `current` against `previous` pixel-by-pixel. If all four RGBA
+/// channels differ by at most `threshold`, the pixel is zeroed (transparent).
+/// Returns the number of pixels marked transparent.
+///
+/// Processes 4 pixels (16 bytes) at a time via portable SIMD, with a scalar
+/// fallback for remainder pixels.
+///
+/// # Panics
+///
+/// Panics if `current.len() != previous.len()` or buffer length is not a
+/// multiple of 4.
 #[inline]
 pub fn mark_unchanged_pixels_simd(current: &mut [u8], previous: &[u8], threshold: u8) -> usize {
     assert_eq!(current.len(), previous.len());
@@ -90,7 +108,13 @@ pub fn mark_unchanged_pixels_simd(current: &mut [u8], previous: &[u8], threshold
     transparent_count
 }
 
-/// Scalar fallback implementation for comparison.
+/// Scalar fallback for [`mark_unchanged_pixels_simd`].
+///
+/// Same behavior, without SIMD. Useful for benchmarking the SIMD speedup.
+///
+/// # Panics
+///
+/// Panics if `current.len() != previous.len()`.
 #[inline]
 pub fn mark_unchanged_pixels_scalar(current: &mut [u8], previous: &[u8], threshold: u8) -> usize {
     assert_eq!(current.len(), previous.len());
