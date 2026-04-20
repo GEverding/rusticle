@@ -32,6 +32,7 @@ pub mod analysis_kernels;
 pub mod candidate_gen;
 pub mod decode;
 pub mod encode;
+pub mod encode_and_measure;
 pub mod error;
 pub mod materialize;
 pub mod optimize;
@@ -54,6 +55,9 @@ pub mod image_compat;
 pub use adaptive_encode::{AdaptiveConfig, AdaptiveDecision};
 pub use adaptive_fallback::{
     AdaptiveBytesPreparer, AdaptiveStage, FallbackReason, FallbackTelemetry,
+};
+pub use encode_and_measure::{
+    EncodeAndMeasure, EncodeAndMeasureConfig, EncodeAndMeasureTelemetry, MeasuredCandidate,
 };
 pub use adaptive_ir::{
     BoundingBox, Canvas, CanonicalFrame, CanonicalSequence, CanonicalSequenceBuilder, ChangedRegion,
