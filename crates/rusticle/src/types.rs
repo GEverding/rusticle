@@ -93,10 +93,14 @@ pub enum Filter {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum OptLevel {
-    /// Basic optimization - exact pixel match only.
+    /// Basic optimization - exact pixel match only, no cropping.
+    /// Lossless: only marks pixels transparent, never modifies colors.
     O1,
-    /// Standard optimization - small color differences.
+    /// Standard optimization - exact pixel match only, no cropping.
+    /// Same as O1 for consistency. Lossless.
     O2,
-    /// Aggressive optimization - best compression.
+    /// Aggressive optimization - exact pixel match only, crops to bounding box.
+    /// Lossless: only marks pixels transparent, never modifies colors.
+    /// Subframes use DisposalMethod::Keep to preserve canvas state.
     O3,
 }

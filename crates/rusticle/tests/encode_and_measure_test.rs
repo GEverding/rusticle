@@ -164,8 +164,10 @@ fn test_encode_and_measure_telemetry_json() {
                 heuristic_score: ScoreBreakdown {
                     byte_cost: 0.5,
                     visual_risk: 0.1,
+                    lut_cost: 0.0,
                     temporal_instability: 0.1,
                     synthetic_transparency_risk: 0.0,
+                    palette_coherence: 0.0,
                     cpu_cost: 0.1,
                     total_score: 0.3,
                 },
@@ -184,8 +186,10 @@ fn test_encode_and_measure_telemetry_json() {
                 heuristic_score: ScoreBreakdown {
                     byte_cost: 0.3,
                     visual_risk: 0.1,
+                    lut_cost: 0.0,
                     temporal_instability: 0.1,
                     synthetic_transparency_risk: 0.0,
+                    palette_coherence: 0.0,
                     cpu_cost: 0.1,
                     total_score: 0.25,
                 },

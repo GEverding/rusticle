@@ -599,8 +599,10 @@ mod tests {
         let score = ScoreBreakdown {
             byte_cost: 0.3,
             visual_risk: 0.1,
+            lut_cost: 0.0,
             temporal_instability: 0.05,
             synthetic_transparency_risk: 0.0,
+            palette_coherence: 0.0,
             cpu_cost: 0.1,
             total_score: 0.2,
         };
@@ -620,8 +622,10 @@ mod tests {
         let score = ScoreBreakdown {
             byte_cost: 0.6,
             visual_risk: 0.4,
+            lut_cost: 0.5,
             temporal_instability: 0.3,
             synthetic_transparency_risk: 0.5,
+            palette_coherence: 0.3,
             cpu_cost: 0.3,
             total_score: 0.45,
         };

@@ -23,7 +23,7 @@ fn test_compositing_produces_full_frames() {
         .unwrap()
         .parent()
         .unwrap();
-    let data = std::fs::read(workspace_root.join("outputs/original_test3.gif"))
+    let data = std::fs::read(workspace_root.join("test_gifs/benchmark_suite/cartoon_01.gif"))
         .expect("test file should exist");
     let gif = Gif::from_bytes(&data).expect("should decode");
 

@@ -1,0 +1,93 @@
+{
+  "categories": {
+    "cartoon": {
+      "avg_ba": 3.449295,
+      "avg_delta_vs_gifsicle": 0.599407,
+      "count": 8,
+      "needs_investigation": false,
+      "p95_ba": 6.574014,
+      "pair_count": 8,
+      "suggested_threshold": 6.0,
+      "worst_ba": 6.690967
+    },
+    "large": {
+      "avg_ba": 3.714771,
+      "avg_delta_vs_gifsicle": 1.137101,
+      "count": 6,
+      "needs_investigation": false,
+      "p95_ba": 5.598064,
+      "pair_count": 6,
+      "suggested_threshold": 6.0,
+      "worst_ba": 5.948357
+    },
+    "many_frames": {
+      "avg_ba": 2.295838,
+      "avg_delta_vs_gifsicle": -4.411953,
+      "count": 6,
+      "needs_investigation": false,
+      "p95_ba": 3.23788,
+      "pair_count": 6,
+      "suggested_threshold": 4.0,
+      "worst_ba": 3.250555
+    },
+    "photographic": {
+      "avg_ba": 2.254817,
+      "avg_delta_vs_gifsicle": -2.714025,
+      "count": 8,
+      "needs_investigation": false,
+      "p95_ba": 5.552644,
+      "pair_count": 8,
+      "suggested_threshold": 6.0,
+      "worst_ba": 7.066257
+    },
+    "pixel_art": {
+      "avg_ba": 3.280687,
+      "avg_delta_vs_gifsicle": -3.819891,
+      "count": 6,
+      "needs_investigation": false,
+      "p95_ba": 6.229259,
+      "pair_count": 6,
+      "suggested_threshold": 6.0,
+      "worst_ba": 7.310373
+    },
+    "simple": {
+      "avg_ba": 2.233159,
+      "avg_delta_vs_gifsicle": -2.461847,
+      "count": 8,
+      "needs_investigation": false,
+      "p95_ba": 3.279754,
+      "pair_count": 8,
+      "suggested_threshold": 4.0,
+      "worst_ba": 3.645898
+    },
+    "transparent": {
+      "avg_ba": 3.462244,
+      "avg_delta_vs_gifsicle": 0.230175,
+      "count": 6,
+      "needs_investigation": true,
+      "p95_ba": 8.188412,
+      "pair_count": 6,
+      "suggested_threshold": 6.0,
+      "worst_ba": 9.696933
+    }
+  },
+  "commit": "2679eb3",
+  "generated_at": "2026-04-18T16:05:34.767287+00:00",
+  "global": {
+    "avg_ba": 2.917071,
+    "count": 48,
+    "needs_investigation": true,
+    "p95_ba": 6.934905,
+    "suggested_threshold": 6.0,
+    "worst_ba": 9.696933
+  },
+  "methodology": {
+    "delta_vs_gifsicle": "avg(rusticle.avg_butteraugli - gifsicle.avg_butteraugli) for matched (test_file, operation, category)",
+    "input_summary": "latest non-empty line from benchmark JSONL",
+    "investigation_rule": "worst_ba > suggested_threshold * 1.5",
+    "metric": "avg_butteraugli",
+    "percentile": "p95 computed by linear interpolation over sorted values",
+    "source_tool": "rusticle",
+    "threshold_formula": "ceil(p95_ba * 1.2), clamped to [1.0, 6.0]"
+  }
+}

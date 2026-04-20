@@ -47,8 +47,8 @@ fn test_decode_encode_roundtrip() {
 #[test]
 fn test_resize_reduces_dimensions() {
     let gif = create_test_gif(200, 200, 2);
-    let original_width = gif.width;
-    let original_height = gif.height;
+    let _original_width = gif.width;
+    let _original_height = gif.height;
 
     let resized = gif
         .resize(100, 100, Filter::Lanczos3)
@@ -332,11 +332,8 @@ fn test_frame_properties_preserved() {
             "Frame {} pixel data size mismatch",
             i
         );
-        assert!(
-            frame.delay.as_millis() >= 0,
-            "Frame {} delay should be non-negative",
-            i
-        );
+        // delay.as_millis() returns u128, always non-negative
+        let _ = frame.delay.as_millis();
     }
 }
 
@@ -404,4 +401,52 @@ fn test_large_dimensions() {
         .expect("Failed to resize");
     assert_eq!(resized.width, 250);
     assert_eq!(resized.height, 250);
+}
+
+#[test]
+fn test_quality_comparison_with_subframed_gif() {
+    // Test that quality comparison doesn't panic on subframed GIFs
+    // (where individual frame buffers are smaller than canvas dimensions)
+    use rusticle::QualityMetrics;
+
+    let gif = create_test_gif(100, 100, 3);
+
+    // Process with O3 optimization which may create subframes
+    let processed = gif
+        .resize(80, 80, Filter::Lanczos3)
+        .expect("Failed to resize")
+        .optimize(OptLevel::O3)
+        .lossy(80);
+
+    // Encode and decode the processed GIF
+    let processed_bytes = processed.to_bytes().expect("Failed to encode");
+    let processed_decoded = Gif::from_bytes(&processed_bytes).expect("Failed to decode");
+
+    // Resize original to match processed dimensions
+    let original_resized = Gif::from_bytes(
+        &create_test_gif(100, 100, 3)
+            .to_bytes()
+            .expect("Failed to encode original"),
+    )
+    .expect("Failed to decode original")
+    .resize(processed.width as u32, processed.height as u32, Filter::Lanczos3)
+    .expect("Failed to resize original");
+
+    // Compare frames - should NOT panic even if frames are subframed
+    let frame_count = original_resized.frames.len().min(processed_decoded.frames.len());
+    assert!(frame_count > 0, "Should have at least one frame to compare");
+
+    for i in 0..frame_count {
+        let metrics = QualityMetrics::compare_with_dimensions(
+            &original_resized.frames[i].pixels,
+            &processed_decoded.frames[i].pixels,
+            processed.width as u32,
+            processed.height as u32,
+        );
+
+        // Metrics should be valid (not NaN)
+        assert!(!metrics.psnr.is_nan(), "PSNR should not be NaN");
+        assert!(!metrics.ssim.is_nan(), "SSIM should not be NaN");
+        assert!(!metrics.mse.is_nan(), "MSE should not be NaN");
+    }
 }

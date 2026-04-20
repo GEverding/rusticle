@@ -12,6 +12,7 @@ fast_image_resize = "5"
 rayon = "1.10"
 serde = { version = "1", features = ["derive"], optional = true }
 image = { version = "0.25", optional = true, default-features = false }
+butteraugli = { version = "0.9", optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
@@ -22,6 +23,7 @@ default = []
 async = ["tokio"]
 serde = ["dep:serde"]
 image = ["dep:image"]
+butteraugli = ["dep:butteraugli"]
 
 [[bench]]
 name = "benchmarks"

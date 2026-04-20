@@ -445,13 +445,56 @@ fn find_transparent_index_and_remap(
             }
             0
         } else {
-            // Full palette, all used - find least used as fallback
-            opaque_usage
+            // Full palette, all used - find least used as fallback.
+            // CRITICAL: we must remap opaque pixels off this index before assigning it to transparency.
+            let chosen_idx = opaque_usage
                 .iter()
                 .enumerate()
                 .min_by_key(|(_, &count)| count)
                 .map(|(idx, _)| idx as u8)
-                .unwrap_or(0)
+                .unwrap_or(0);
+
+            // Find a replacement index for opaque pixels currently using chosen_idx.
+            // Prefer an index with the same color (if one exists), otherwise pick the
+            // second-least-used index and copy the color from chosen_idx to it.
+            let chosen_offset = (chosen_idx as usize) * 3;
+            let chosen_color = (palette[chosen_offset], palette[chosen_offset + 1], palette[chosen_offset + 2]);
+
+            let replacement_idx = if let Some(idx) = (0..palette_len)
+                .find(|&idx| {
+                    idx != chosen_idx as usize
+                        && (palette[idx * 3], palette[idx * 3 + 1], palette[idx * 3 + 2]) == chosen_color
+                })
+            {
+                // Found an index with the same color - use it
+                idx as u8
+            } else {
+                // No exact color match - pick the second-least-used index and copy the color
+                let replacement_idx = opaque_usage
+                    .iter()
+                    .enumerate()
+                    .filter(|(idx, _)| *idx != chosen_idx as usize)
+                    .min_by_key(|(_, &count)| count)
+                    .map(|(idx, _)| idx as u8)
+                    .unwrap_or(0); // Fallback to 0 if somehow all indices are the same
+
+                // Copy the color from chosen_idx to replacement_idx so opaque pixels preserve their color
+                let replacement_offset = (replacement_idx as usize) * 3;
+                palette[replacement_offset] = palette[chosen_offset];
+                palette[replacement_offset + 1] = palette[chosen_offset + 1];
+                palette[replacement_offset + 2] = palette[chosen_offset + 2];
+
+                replacement_idx
+            };
+
+            // Remap opaque pixels from chosen_idx to replacement_idx
+            for (i, pixel) in rgba_pixels.chunks_exact(4).enumerate() {
+                if pixel[3] >= 128 && indices[i] == chosen_idx {
+                    indices[i] = replacement_idx;
+                }
+            }
+
+            chosen_idx
         }
     };
 
@@ -762,5 +805,188 @@ mod tests {
         // Index 0 should now have the color that was at index 1 (or swapped)
         // The important thing is that opaque pixels were remapped correctly
         assert_eq!(indices[0], 1, "Opaque pixel at index 0 should be remapped");
+    }
+
+    /// Build a 256-color flat-RGB palette where every entry is a distinct opaque color.
+    /// Colors are spread across the RGB cube so none collide.
+    fn make_full_256_palette() -> Vec<u8> {
+        let mut palette = Vec::with_capacity(256 * 3);
+        for i in 0u8..=255 {
+            // Spread across the cube: R cycles fast, G mid, B slow
+            palette.push(i); // R
+            palette.push(i / 4); // G
+            palette.push(i / 16); // B
+        }
+        palette
+    }
+
+    /// Regression test: full 256-color palette, all indices used by opaque pixels.
+    ///
+    /// Bug: `find_transparent_index_and_remap` falls into the "full palette" branch and
+    /// picks the least-used index as `transparent_idx` WITHOUT remapping the opaque pixels
+    /// that were already using that index.  After the call those opaque pixels still carry
+    /// the chosen index, so the GIF decoder treats them as transparent — silent corruption.
+    ///
+    /// Correct behaviour: every opaque pixel that was using the chosen transparent index
+    /// must be remapped to a *different* index (or the palette must be extended / the
+    /// function must refuse to clobber opaque pixels).
+    #[test]
+    fn test_find_transparent_index_full_palette_opaque_pixels_not_clobbered() {
+        // --- Build a 256-entry palette (all slots occupied by opaque colors) ---
+        let mut palette = make_full_256_palette();
+
+        // --- Build pixel data: 256 opaque pixels (one per palette entry) + 1 transparent ---
+        // Layout: pixels 0..255 are opaque, each using its own palette index.
+        //         pixel 256 is transparent (alpha = 0).
+        let pixel_count = 257usize;
+        let mut rgba_pixels = Vec::with_capacity(pixel_count * 4);
+        for i in 0u8..=255 {
+            rgba_pixels.extend_from_slice(&[i, i / 4, i / 16, 255]); // opaque
+        }
+        rgba_pixels.extend_from_slice(&[0, 0, 0, 0]); // transparent pixel
+
+        // Indices: pixel i → palette index i (for i in 0..256), transparent pixel → 0
+        let mut indices: Vec<u8> = (0u8..=255).collect();
+        indices.push(0); // transparent pixel initially mapped to index 0
+
+        // --- Call the function under test ---
+        let transparent_idx =
+            find_transparent_index_and_remap(&rgba_pixels, &mut indices, &mut palette)
+                .expect("should return Some when transparent pixels are present");
+
+        // --- Invariant 1: the transparent pixel must use the designated transparent index ---
+        assert_eq!(
+            indices[256], transparent_idx,
+            "transparent pixel must be mapped to the transparent index"
+        );
+
+        // --- Invariant 2: NO opaque pixel may use the transparent index ---
+        // This is the invariant that the bug violates: opaque pixels that happened to
+        // use the chosen index are left with it, making them appear transparent.
+        for pixel_pos in 0..256usize {
+            let alpha = rgba_pixels[pixel_pos * 4 + 3];
+            if alpha >= 128 {
+                assert_ne!(
+                    indices[pixel_pos], transparent_idx,
+                    "opaque pixel at position {pixel_pos} must NOT use the transparent index \
+                     ({transparent_idx}); it would be rendered as transparent (bug)"
+                );
+            }
+        }
+    }
+
+    /// Complementary check: when the full-palette branch is taken, opaque pixels that
+    /// were remapped must not use the transparent index. Color preservation is best-effort:
+    /// if the palette has duplicate colors, the original color is preserved; otherwise,
+    /// the palette entry at the new index is overwritten with the original color.
+    #[test]
+    fn test_find_transparent_index_full_palette_opaque_colors_best_effort() {
+        let mut palette = make_full_256_palette();
+
+        // Snapshot original palette colors before mutation
+        let original_palette = palette.clone();
+
+        // 256 opaque pixels (one per index) + 1 transparent
+        let mut rgba_pixels = Vec::with_capacity(257 * 4);
+        for i in 0u8..=255 {
+            rgba_pixels.extend_from_slice(&[i, i / 4, i / 16, 255]);
+        }
+        rgba_pixels.extend_from_slice(&[0, 0, 0, 0]);
+
+        let mut indices: Vec<u8> = (0u8..=255).collect();
+        indices.push(0);
+
+        let transparent_idx =
+            find_transparent_index_and_remap(&rgba_pixels, &mut indices, &mut palette)
+                .expect("should return Some");
+
+        // For every opaque pixel:
+        // 1. It must NOT use the transparent index (primary invariant)
+        // 2. Its color should be preserved if possible (best-effort)
+        for pixel_pos in 0..256usize {
+            let orig_idx = pixel_pos as u8; // pixel i originally used index i
+            let new_idx = indices[pixel_pos] as usize;
+
+            // Primary invariant: no opaque pixel uses the transparent index
+            assert_ne!(
+                new_idx as u8, transparent_idx,
+                "opaque pixel at position {pixel_pos} must not use transparent index"
+            );
+
+            let orig_r = original_palette[orig_idx as usize * 3];
+            let orig_g = original_palette[orig_idx as usize * 3 + 1];
+            let orig_b = original_palette[orig_idx as usize * 3 + 2];
+
+            let new_r = palette[new_idx * 3];
+            let new_g = palette[new_idx * 3 + 1];
+            let new_b = palette[new_idx * 3 + 2];
+
+            // Secondary: color preservation is best-effort. If the pixel was remapped
+            // (new_idx != orig_idx), the palette entry at new_idx should have been
+            // updated to match the original color (or it already had that color).
+            if new_idx != orig_idx as usize {
+                // Pixel was remapped - the palette should have been updated
+                assert_eq!(
+                    (new_r, new_g, new_b),
+                    (orig_r, orig_g, orig_b),
+                    "opaque pixel at position {pixel_pos} was remapped from index {orig_idx} \
+                     to {new_idx}; palette entry should have been updated to preserve color"
+                );
+            }
+        }
+    }
+
+    /// Edge-case: exactly one transparent pixel, palette fully saturated, the
+    /// least-used opaque index has exactly 1 user.  The single opaque pixel that
+    /// shared that chosen transparent index must be remapped, not silently turned
+    /// transparent.
+    ///
+    /// Construction: give index 0 only ONE opaque user so `min_by_key` picks it as
+    /// `transparent_idx`, then verify that one opaque pixel is not left pointing at 0.
+    #[test]
+    fn test_find_transparent_index_full_palette_single_opaque_user_remapped() {
+        // Palette: 256 entries, all distinct
+        let mut palette = make_full_256_palette();
+
+        // We want index 0 to be the least-used (1 user) so the buggy branch picks it.
+        // Give every other index 2 opaque users, index 0 exactly 1 opaque user.
+        let mut rgba_pixels: Vec<u8> = Vec::new();
+        let mut indices: Vec<u8> = Vec::new();
+
+        // Index 0: exactly ONE opaque pixel (the victim the bug will clobber)
+        rgba_pixels.extend_from_slice(&[0, 0, 0, 255]); // opaque, index 0
+        let opaque_idx0_pos = indices.len();
+        indices.push(0u8);
+
+        // Indices 1..=255: two opaque pixels each (so index 0 is the minimum)
+        for i in 1u8..=255 {
+            rgba_pixels.extend_from_slice(&[i, i / 4, i / 16, 255]);
+            indices.push(i);
+            rgba_pixels.extend_from_slice(&[i, i / 4, i / 16, 255]);
+            indices.push(i);
+        }
+
+        // One transparent pixel
+        rgba_pixels.extend_from_slice(&[0, 0, 0, 0]);
+        let transparent_pos = indices.len();
+        indices.push(255u8); // initial index doesn't matter
+
+        let transparent_idx =
+            find_transparent_index_and_remap(&rgba_pixels, &mut indices, &mut palette)
+                .expect("should return Some");
+
+        // The buggy branch picks index 0 (least used) as transparent_idx.
+        // Verify the invariant: the opaque pixel that was at index 0 must NOT
+        // still be pointing at transparent_idx after the call.
+        assert_eq!(
+            indices[transparent_pos], transparent_idx,
+            "transparent pixel must use transparent index"
+        );
+
+        assert_ne!(
+            indices[opaque_idx0_pos], transparent_idx,
+            "the single opaque pixel that used index 0 (chosen as transparent_idx={transparent_idx}) \
+             must be remapped off it — leaving it there makes it appear transparent (bug)"
+        );
     }
 }

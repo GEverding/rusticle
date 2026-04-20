@@ -5,6 +5,8 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
+mod adaptive_harness;
+
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use rusticle::{AdaptiveConfig, Filter, Gif, OptLevel, QualityMetrics};
 use std::error::Error;
@@ -27,6 +29,8 @@ enum Command {
     Resize(ResizeArgs),
     /// Compare quality metrics between two GIFs.
     Quality(QualityArgs),
+    /// Run adaptive encoding benchmark harness.
+    AdaptiveHarness(AdaptiveHarnessArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -78,6 +82,21 @@ struct QualityArgs {
     processed: PathBuf,
 }
 
+#[derive(Debug, Clone, Args)]
+struct AdaptiveHarnessArgs {
+    /// Benchmark suite directory (e.g., test_gifs/benchmark_suite).
+    #[arg(long)]
+    benchmark_dir: PathBuf,
+
+    /// Holdout suite directory (optional).
+    #[arg(long)]
+    holdout_dir: Option<PathBuf>,
+
+    /// Output directory for reports (default: outputs/).
+    #[arg(long, default_value = "outputs")]
+    output_dir: PathBuf,
+}
+
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum CliFilter {
     Nearest,
@@ -120,6 +139,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     match cli.command {
         Command::Resize(args) => run_resize(args),
         Command::Quality(args) => compare_quality(&args.original, &args.processed),
+        Command::AdaptiveHarness(args) => run_adaptive_harness(args),
     }
 }
 
@@ -181,6 +201,7 @@ fn run_resize(args: ResizeArgs) -> Result<(), Box<dyn Error>> {
                 success: false,
                 fallback_reason: Some("adaptive mode disabled".to_string()),
                 telemetry_json: None,
+                tiered_telemetry: None,
             },
             bytes,
         )
@@ -384,6 +405,56 @@ fn compare_quality(original_path: &Path, processed_path: &Path) -> Result<(), Bo
             eprintln!("VERDICT: POOR quality — consider different settings");
         }
     }
+
+    Ok(())
+}
+
+fn run_adaptive_harness(args: AdaptiveHarnessArgs) -> Result<(), Box<dyn Error>> {
+    eprintln!("Running adaptive encoding benchmark harness...");
+    eprintln!("Benchmark dir: {}", args.benchmark_dir.display());
+    if let Some(ref holdout) = args.holdout_dir {
+        eprintln!("Holdout dir: {}", holdout.display());
+    }
+
+    // Create output directory if it doesn't exist
+    fs::create_dir_all(&args.output_dir)?;
+
+    // Run the harness
+    let report = adaptive_harness::run_harness(
+        &args.benchmark_dir,
+        args.holdout_dir.as_deref(),
+    )?;
+
+    // Write JSON report
+    let json_path = args.output_dir.join("adaptive_harness_report.json");
+    let json_content = serde_json::to_string_pretty(&report)?;
+    fs::write(&json_path, json_content)?;
+    eprintln!("✓ JSON report: {}", json_path.display());
+
+    // Write Markdown report
+    let md_path = args.output_dir.join("adaptive_harness_report.md");
+    let md_content = report.to_markdown();
+    fs::write(&md_path, md_content)?;
+    eprintln!("✓ Markdown report: {}", md_path.display());
+
+    // Print summary to stderr
+    eprintln!();
+    eprintln!("=== ADAPTIVE HARNESS SUMMARY ===");
+    eprintln!("Total files: {}", report.total_files);
+    eprintln!("Successful: {} ({:.1}%)", report.successful_files, 
+        (report.successful_files as f32 / report.total_files as f32) * 100.0);
+    eprintln!("Fallback: {} ({:.1}%)", report.fallback_files,
+        (report.fallback_files as f32 / report.total_files as f32) * 100.0);
+    eprintln!("Global avg score: {:.3}", report.global_avg_score);
+    eprintln!("Global avg estimated bytes: {}", report.global_avg_estimated_bytes);
+    eprintln!();
+    eprintln!("Taxonomy distribution:");
+    for (taxonomy, count) in &report.taxonomy_summary {
+        eprintln!("  {}: {}", taxonomy, count);
+    }
+    eprintln!();
+    eprintln!("Voyager-like offenders: {}", report.voyager_offenders.len());
+    eprintln!("Disposal-heavy offenders: {}", report.disposal_heavy_offenders.len());
 
     Ok(())
 }

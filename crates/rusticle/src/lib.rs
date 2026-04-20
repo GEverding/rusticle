@@ -44,7 +44,11 @@ pub mod profiler;
 pub mod quality;
 pub mod resize;
 pub mod scoring;
+pub mod sequence_optimizer;
 pub mod simd_opt;
+pub mod tier0_classifier;
+pub mod tier1_pruning;
+pub mod tier2_measure;
 pub mod types;
 
 #[cfg(feature = "async")]
@@ -76,6 +80,11 @@ pub use lut_policy::{
     candidate_to_family, CandidateFamily, CpuBudgetClass, LutEligibility, PolicySignals,
     QuantizationCostClass,
 };
+pub use tier0_classifier::{Tier0Classifier, Tier0Decision};
+pub use tier1_pruning::{PruneReason, PruneResult, Tier1Pruner};
+pub use tier2_measure::{
+    MeasurementBudget, QualityGuardrails, Tier2Measurer, Tier2Telemetry, MeasuredResult,
+};
 pub use materialize::Materializer;
 pub use palette_lut::{PaletteLut, PaletteMapStats};
 pub use palette_realize::{PaletteRealization, PaletteRealizer, QuantizedFrameData};
@@ -89,4 +98,5 @@ pub use profiler::{
 };
 pub use quality::QualityMetrics;
 pub use scoring::{Chooser, DecisionReason, FrameDecision, ScoreBreakdown, Scorer, SequenceDecision};
+pub use sequence_optimizer::{SequenceOptimizer, SequenceOptimizerConfig};
 pub use types::{DisposalMethod, Filter, Frame, Gif, LoopCount, OptLevel, Palette};

@@ -1,0 +1,63 @@
+{
+  "generated_at": "2026-04-18T20:49:12Z",
+  "method": "stratified_by_category_v1",
+  "seed": 20260418,
+  "source_manifest": "test_gifs/benchmark_suite/manifest.json",
+  "total_files": 24,
+  "train": [
+    "test_gifs/benchmark_suite/cartoon_01.gif",
+    "test_gifs/benchmark_suite/cartoon_03.gif",
+    "test_gifs/benchmark_suite/cartoon_04.gif",
+    "test_gifs/benchmark_suite/large_dims_01.gif",
+    "test_gifs/benchmark_suite/large_dims_03.gif",
+    "test_gifs/benchmark_suite/many_frames_01.gif",
+    "test_gifs/benchmark_suite/many_frames_02.gif",
+    "test_gifs/benchmark_suite/photo_01.gif",
+    "test_gifs/benchmark_suite/photo_02.gif",
+    "test_gifs/benchmark_suite/photo_03.gif",
+    "test_gifs/benchmark_suite/pixel_art_02.gif",
+    "test_gifs/benchmark_suite/pixel_art_03.gif",
+    "test_gifs/benchmark_suite/small_simple_01.gif",
+    "test_gifs/benchmark_suite/small_simple_02.gif",
+    "test_gifs/benchmark_suite/small_simple_04.gif",
+    "test_gifs/benchmark_suite/transparent_01.gif",
+    "test_gifs/benchmark_suite/transparent_02.gif"
+  ],
+  "validate": [
+    "test_gifs/benchmark_suite/cartoon_02.gif",
+    "test_gifs/benchmark_suite/large_dims_02.gif",
+    "test_gifs/benchmark_suite/many_frames_03.gif",
+    "test_gifs/benchmark_suite/photo_04.gif",
+    "test_gifs/benchmark_suite/pixel_art_01.gif",
+    "test_gifs/benchmark_suite/small_simple_03.gif",
+    "test_gifs/benchmark_suite/transparent_03.gif"
+  ],
+  "stats": {
+    "target_validate_ratio": 0.25,
+    "train": {
+      "total": 17,
+      "categories": {
+        "cartoon": 3,
+        "large": 2,
+        "many_frames": 2,
+        "photographic": 3,
+        "pixel_art": 2,
+        "simple": 3,
+        "transparent": 2
+      }
+    },
+    "validate": {
+      "total": 7,
+      "categories": {
+        "cartoon": 1,
+        "large": 1,
+        "many_frames": 1,
+        "photographic": 1,
+        "pixel_art": 1,
+        "simple": 1,
+        "transparent": 1
+      }
+    },
+    "categories_without_validate": []
+  }
+}

@@ -87,9 +87,35 @@ See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for full details.
 | `Frame` | Single GIF frame with RGBA pixels and metadata. |
 | `Filter` | Resize algorithm: `Nearest`, `Bilinear`, `Mitchell`, `Lanczos3`. |
 | `OptLevel` | Optimization level: `O1` (basic), `O2` (standard), `O3` (aggressive with diff cropping). |
-| `QualityMetrics` | PSNR/SSIM comparison between frames. |
+| `QualityMetrics` | PSNR/SSIM/Butteraugli comparison between frames. |
 | `PaletteLut` | O(1) palette color lookup table (internal, but public). |
 | `EncodeStats` | Encoding statistics (fast path vs fallback, timing). |
+
+## Quality Metrics
+
+The `QualityMetrics` type compares two images and returns:
+
+- **PSNR** (Peak Signal-to-Noise Ratio): Higher is better. Typical range 30–50 dB.
+- **SSIM** (Structural Similarity Index): Higher is better. Range 0–1, with > 0.95 excellent.
+- **Butteraugli** (perceptual distance): **Lower is better** (opposite of PSNR/SSIM). Requires `butteraugli` feature and image dimensions ≥ 8×8. Typical range: < 1.0 imperceptible, 1.0–2.0 good, > 3.0 noticeable.
+
+Enable Butteraugli support:
+
+```toml
+[dependencies]
+rusticle = { version = "0.1", features = ["butteraugli"] }
+```
+
+Then use `QualityMetrics::compare_with_dimensions()` to compute Butteraugli scores:
+
+```rust
+use rusticle::QualityMetrics;
+
+let metrics = QualityMetrics::compare_with_dimensions(&original, &processed, 640, 480);
+if let Some(ba) = metrics.butteraugli {
+    println!("Butteraugli: {:.2} (lower is better)", ba);
+}
+```
 
 ## Project structure
 
@@ -104,9 +130,10 @@ crates/
 
 ```toml
 [features]
-async = ["tokio"]        # Async I/O support
-serde = ["dep:serde"]    # Serialize types (Filter, OptLevel, QualityMetrics, etc.)
-image = ["dep:image"]    # image crate conversions (Frame ↔ RgbaImage)
+async = ["tokio"]           # Async I/O support
+serde = ["dep:serde"]       # Serialize types (Filter, OptLevel, QualityMetrics, etc.)
+image = ["dep:image"]       # image crate conversions (Frame ↔ RgbaImage)
+butteraugli = ["dep:butteraugli"]  # Butteraugli perceptual distance metrics
 ```
 
 With the `image` feature enabled:
