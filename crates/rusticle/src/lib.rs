@@ -23,14 +23,22 @@
 //! - **`async`** — Async I/O via tokio (`Gif::from_async_read`, `Gif::encode_to_async_write`)
 //! - **`serde`** — Serialize/deserialize `Filter`, `OptLevel`, `QualityMetrics`, etc.
 //! - **`image`** — Conversions between `Frame`/`Gif` and `image::RgbaImage`
+//! - **`butteraugli`** — Perceptual image quality metrics via butteraugli
 
+pub mod adaptive_encode;
+pub mod adaptive_ir;
+pub mod analysis_kernels;
+pub mod candidate_gen;
 pub mod decode;
 pub mod encode;
 pub mod error;
 pub mod optimize;
 pub mod palette_lut;
+pub mod palette_strategy;
+pub mod profiler;
 pub mod quality;
 pub mod resize;
+pub mod scoring;
 pub mod simd_opt;
 pub mod types;
 
@@ -40,8 +48,28 @@ pub mod async_io;
 #[cfg(feature = "image")]
 pub mod image_compat;
 
+pub use adaptive_encode::{AdaptiveConfig, AdaptiveDecision};
+pub use adaptive_ir::{
+    BoundingBox, Canvas, CanonicalFrame, CanonicalSequence, CanonicalSequenceBuilder, ChangedRegion,
+    SourcePatch,
+};
+pub use analysis_kernels::{
+    analyze_changed_pixels_scalar, analyze_changed_pixels_simd, analyze_color_distance_scalar,
+    analyze_color_distance_simd, analyze_transparency_scalar, analyze_transparency_simd,
+    ChangedPixelStats, ColorDistanceStats, TransparencyStats,
+};
+pub use candidate_gen::{Candidate, CandidateGenerator, CandidateMetadata, CandidateRepresentation, SafetyReason};
 pub use encode::EncodeStats;
 pub use error::{Error, Result};
 pub use palette_lut::{PaletteLut, PaletteMapStats};
+pub use palette_strategy::{
+    determine_palette_strategies, PaletteStrategy, PaletteStrategyMetadata, PaletteStrategySet,
+    StrategyReason,
+};
+pub use profiler::{
+    ChangeStatistics, DeltaSignal, DisposalDistribution, GifProfile, PaletteInfo, PatchDensity,
+    SequenceMetrics, SequenceTaxonomy, TransparencyAnalysis,
+};
 pub use quality::QualityMetrics;
+pub use scoring::{Chooser, DecisionReason, FrameDecision, ScoreBreakdown, Scorer, SequenceDecision};
 pub use types::{DisposalMethod, Filter, Frame, Gif, LoopCount, OptLevel, Palette};

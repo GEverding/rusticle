@@ -6,7 +6,7 @@ use tikv_jemallocator::Jemalloc;
 static GLOBAL: Jemalloc = Jemalloc;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use rusticle::{Filter, Gif, OptLevel, QualityMetrics};
+use rusticle::{AdaptiveConfig, Filter, Gif, OptLevel, QualityMetrics};
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -60,6 +60,14 @@ struct ResizeArgs {
     /// Lossy quality 0-100 (lower = smaller file, more artifacts).
     #[arg(long, value_parser = clap::value_parser!(u8).range(0..=100))]
     lossy: Option<u8>,
+
+    /// Enable experimental adaptive encoding mode.
+    #[arg(long)]
+    adaptive: bool,
+
+    /// Emit adaptive encoding telemetry to stderr (requires --adaptive).
+    #[arg(long)]
+    adaptive_telemetry: bool,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -160,8 +168,31 @@ fn run_resize(args: ResizeArgs) -> Result<(), Box<dyn Error>> {
     let process_time = process_start.elapsed();
 
     let encode_start = Instant::now();
-    let encoded = processed.to_bytes()?;
+    let (adaptive_decision, encoded) = if args.adaptive {
+        let config = AdaptiveConfig {
+            enabled: true,
+            emit_telemetry: args.adaptive_telemetry,
+        };
+        processed.encode_adaptive(&config)?
+    } else {
+        let bytes = processed.to_bytes()?;
+        (
+            rusticle::AdaptiveDecision {
+                success: false,
+                fallback_reason: Some("adaptive mode disabled".to_string()),
+                telemetry_json: None,
+            },
+            bytes,
+        )
+    };
     let encode_time = encode_start.elapsed();
+
+    if args.adaptive {
+        eprintln!(
+            "Adaptive: success={}, fallback_reason={:?}",
+            adaptive_decision.success, adaptive_decision.fallback_reason
+        );
+    }
 
     let write_start = Instant::now();
     fs::write(&output_path, &encoded)?;
@@ -222,7 +253,7 @@ fn compare_quality(original_path: &Path, processed_path: &Path) -> Result<(), Bo
 
     if original.frames.len() != processed.frames.len() {
         eprintln!(
-            "Warning: frame count differs ({} vs {})",
+            "Warning: frame count differs (original: {} vs processed: {})",
             original.frames.len(),
             processed.frames.len()
         );
@@ -247,36 +278,62 @@ fn compare_quality(original_path: &Path, processed_path: &Path) -> Result<(), Bo
     let mut total_psnr = 0.0;
     let mut total_ssim = 0.0;
     let mut total_dist = 0.0;
+    let mut total_butteraugli = 0.0;
     let mut worst_psnr: f64 = f64::INFINITY;
     let mut worst_ssim: f64 = 1.0;
+    let mut worst_butteraugli: f64 = 0.0;
+    let mut butteraugli_count = 0;
     let mut good_frames = 0;
     let mut excellent_frames = 0;
 
     for i in 0..frame_count {
-        let metrics =
-            QualityMetrics::compare(&original.frames[i].pixels, &processed.frames[i].pixels);
+        let metrics = QualityMetrics::compare_with_dimensions(
+            &original.frames[i].pixels,
+            &processed.frames[i].pixels,
+            original.width as u32,
+            original.height as u32,
+        );
 
-        total_psnr += metrics.psnr.min(100.0);
-        total_ssim += metrics.ssim;
-        total_dist += metrics.mean_color_distance;
-        worst_psnr = worst_psnr.min(metrics.psnr);
-        worst_ssim = worst_ssim.min(metrics.ssim);
+        // Only accumulate metrics if comparison is valid
+        if metrics.valid {
+            total_psnr += metrics.psnr.min(100.0);
+            total_ssim += metrics.ssim;
+            total_dist += metrics.mean_color_distance;
+            worst_psnr = worst_psnr.min(metrics.psnr);
+            worst_ssim = worst_ssim.min(metrics.ssim);
 
-        if metrics.is_good() {
-            good_frames += 1;
-        }
-        if metrics.is_excellent() {
-            excellent_frames += 1;
+            if let Some(ba) = metrics.butteraugli {
+                total_butteraugli += ba;
+                worst_butteraugli = worst_butteraugli.max(ba);
+                butteraugli_count += 1;
+            }
+
+            if metrics.is_good() {
+                good_frames += 1;
+            }
+            if metrics.is_excellent() {
+                excellent_frames += 1;
+            }
         }
 
         if i < 3 || i == frame_count - 1 {
-            eprintln!(
-                "Frame {:3}: PSNR={:5.1}dB SSIM={:.4} Dist={:.1}",
-                i,
-                metrics.psnr.min(99.9),
-                metrics.ssim,
-                metrics.mean_color_distance
-            );
+            if !metrics.valid {
+                eprintln!("Frame {:3}: INVALID (buffer mismatch)", i);
+            } else {
+                let ba_str = if let Some(ba) = metrics.butteraugli {
+                    format!("{:.2}", ba)
+                } else {
+                    "N/A".to_string()
+                };
+                eprintln!(
+                    "Frame {:3}: PSNR={:5.1}dB SSIM={:.4} Dist={:.1} BA={}",
+                    i,
+                    metrics.psnr.min(99.9),
+                    metrics.ssim,
+                    metrics.mean_color_distance,
+                    ba_str
+                );
+            }
         } else if i == 3 {
             eprintln!("...");
         }
@@ -284,6 +341,11 @@ fn compare_quality(original_path: &Path, processed_path: &Path) -> Result<(), Bo
 
     let avg_psnr = total_psnr / frame_count as f64;
     let avg_ssim = total_ssim / frame_count as f64;
+    let avg_butteraugli = if butteraugli_count > 0 {
+        Some(total_butteraugli / butteraugli_count as f64)
+    } else {
+        None
+    };
 
     eprintln!();
     eprintln!("=== QUALITY SUMMARY ({frame_count} frames) ===");
@@ -292,19 +354,35 @@ fn compare_quality(original_path: &Path, processed_path: &Path) -> Result<(), Bo
     eprintln!("Avg Dist:   {:.2}", total_dist / frame_count as f64);
     eprintln!("Worst PSNR: {:5.2} dB", worst_psnr.min(99.9));
     eprintln!("Worst SSIM: {:.4}", worst_ssim);
+    if let Some(avg_ba) = avg_butteraugli {
+        eprintln!("Avg BA:     {:.2} (lower is better)", avg_ba);
+        eprintln!("Worst BA:   {:.2} (lower is better)", worst_butteraugli);
+    }
     eprintln!();
     eprintln!("Excellent (PSNR≥40, SSIM≥0.95): {excellent_frames}/{frame_count} frames");
     eprintln!("Good      (PSNR≥30, SSIM≥0.90): {good_frames}/{frame_count} frames");
 
     eprintln!();
-    if avg_psnr >= 40.0 && avg_ssim >= 0.95 {
-        eprintln!("VERDICT: EXCELLENT quality");
-    } else if avg_psnr >= 30.0 && avg_ssim >= 0.90 {
-        eprintln!("VERDICT: GOOD quality");
-    } else if avg_psnr >= 25.0 && avg_ssim >= 0.80 {
-        eprintln!("VERDICT: ACCEPTABLE quality");
+    if let Some(avg_ba) = avg_butteraugli {
+        if avg_psnr >= 40.0 && avg_ssim >= 0.95 && avg_ba < 1.0 {
+            eprintln!("VERDICT: EXCELLENT quality");
+        } else if avg_psnr >= 30.0 && avg_ssim >= 0.90 && avg_ba < 2.0 {
+            eprintln!("VERDICT: GOOD quality");
+        } else if avg_psnr >= 25.0 && avg_ssim >= 0.80 {
+            eprintln!("VERDICT: ACCEPTABLE quality");
+        } else {
+            eprintln!("VERDICT: POOR quality — consider different settings");
+        }
     } else {
-        eprintln!("VERDICT: POOR quality — consider different settings");
+        if avg_psnr >= 40.0 && avg_ssim >= 0.95 {
+            eprintln!("VERDICT: EXCELLENT quality");
+        } else if avg_psnr >= 30.0 && avg_ssim >= 0.90 {
+            eprintln!("VERDICT: GOOD quality");
+        } else if avg_psnr >= 25.0 && avg_ssim >= 0.80 {
+            eprintln!("VERDICT: ACCEPTABLE quality");
+        } else {
+            eprintln!("VERDICT: POOR quality — consider different settings");
+        }
     }
 
     Ok(())
