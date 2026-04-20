@@ -26,14 +26,17 @@
 //! - **`butteraugli`** — Perceptual image quality metrics via butteraugli
 
 pub mod adaptive_encode;
+pub mod adaptive_fallback;
 pub mod adaptive_ir;
 pub mod analysis_kernels;
 pub mod candidate_gen;
 pub mod decode;
 pub mod encode;
 pub mod error;
+pub mod materialize;
 pub mod optimize;
 pub mod palette_lut;
+pub mod palette_realize;
 pub mod palette_strategy;
 pub mod profiler;
 pub mod quality;
@@ -49,6 +52,9 @@ pub mod async_io;
 pub mod image_compat;
 
 pub use adaptive_encode::{AdaptiveConfig, AdaptiveDecision};
+pub use adaptive_fallback::{
+    AdaptiveBytesPreparer, AdaptiveStage, FallbackReason, FallbackTelemetry,
+};
 pub use adaptive_ir::{
     BoundingBox, Canvas, CanonicalFrame, CanonicalSequence, CanonicalSequenceBuilder, ChangedRegion,
     SourcePatch,
@@ -61,7 +67,9 @@ pub use analysis_kernels::{
 pub use candidate_gen::{Candidate, CandidateGenerator, CandidateMetadata, CandidateRepresentation, SafetyReason};
 pub use encode::EncodeStats;
 pub use error::{Error, Result};
+pub use materialize::Materializer;
 pub use palette_lut::{PaletteLut, PaletteMapStats};
+pub use palette_realize::{PaletteRealization, PaletteRealizer, QuantizedFrameData};
 pub use palette_strategy::{
     determine_palette_strategies, PaletteStrategy, PaletteStrategyMetadata, PaletteStrategySet,
     StrategyReason,
