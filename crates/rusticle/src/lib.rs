@@ -34,6 +34,7 @@ pub mod decode;
 pub mod encode;
 pub mod encode_and_measure;
 pub mod error;
+pub mod lut_policy;
 pub mod materialize;
 pub mod optimize;
 pub mod palette_lut;
@@ -71,6 +72,10 @@ pub use analysis_kernels::{
 pub use candidate_gen::{Candidate, CandidateGenerator, CandidateMetadata, CandidateRepresentation, SafetyReason};
 pub use encode::EncodeStats;
 pub use error::{Error, Result};
+pub use lut_policy::{
+    candidate_to_family, CandidateFamily, CpuBudgetClass, LutEligibility, PolicySignals,
+    QuantizationCostClass,
+};
 pub use materialize::Materializer;
 pub use palette_lut::{PaletteLut, PaletteMapStats};
 pub use palette_realize::{PaletteRealization, PaletteRealizer, QuantizedFrameData};
