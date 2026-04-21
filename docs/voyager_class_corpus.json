@@ -1,0 +1,91 @@
+{
+  "study_phase": "rusticle-047",
+  "spec_reference": "docs/VOYAGER_STUDY_CORRECTED_SPEC.md",
+  "corpus_size": 4,
+  "selection_note": "No files in the available corpora (holdout_suite + benchmark_suite) strictly match all voyager-class criteria (no transparent GCEs + ≥90% None/Keep disposal + ≥50% offset subframes + global palette). The corpus below represents the best available candidates that match the most critical criteria: no transparent GCEs, 100% None/Keep disposal, and global palette. Offset subframes are 0% for all candidates, which is a significant deviation from the ≥50% requirement. This suggests the voyager-class definition may be too narrow for the available corpus, or the corpus needs to be expanded with files that have more offset subframes.",
+  "inclusion_criteria": {
+    "no_transparent_gces": "No frame has transparent pixels (alpha < 255)",
+    "disposal_method": "≥90% of frames use None or Keep disposal (actual: 100%)",
+    "offset_subframes": "≥50% of frames have non-zero left/top offset (actual: 0% - CAVEAT)",
+    "global_palette": "GIF has a global palette",
+    "stable_palette": "Color distribution is relatively consistent across frames"
+  },
+  "selected_files": [
+    {
+      "name": "790106_0203_voyager_58m_to_31m_reduced",
+      "path": "test_gifs/holdout_suite/790106_0203_voyager_58m_to_31m_reduced.gif",
+      "source": "holdout_suite",
+      "rationale": "Voyager space probe animation. Meets: no transparent GCEs, 100% None/Keep disposal, global palette. Caveat: 0% offset subframes (full-frame animation). 60 frames of consistent structure suggest stable palette. Named 'voyager' in filename, making it semantically aligned with voyager-class intent.",
+      "structural_facts": {
+        "frames": 60,
+        "width": 390,
+        "height": 400,
+        "has_transparent_gces": false,
+        "none_keep_disposal_pct": 100.0,
+        "offset_subframes_pct": 0.0,
+        "has_global_palette": true,
+        "file_size_bytes": 3105318
+      }
+    },
+    {
+      "name": "pangea_animation_03",
+      "path": "test_gifs/holdout_suite/pangea_animation_03.gif",
+      "source": "holdout_suite",
+      "rationale": "Geological animation showing continental drift. Meets: no transparent GCEs, 100% None/Keep disposal, global palette. Caveat: 0% offset subframes. 38 frames with consistent color palette across geological time-lapse sequence.",
+      "structural_facts": {
+        "frames": 38,
+        "width": 200,
+        "height": 160,
+        "has_transparent_gces": false,
+        "none_keep_disposal_pct": 100.0,
+        "offset_subframes_pct": 0.0,
+        "has_global_palette": true,
+        "file_size_bytes": 316480
+      }
+    },
+    {
+      "name": "apparent_retrograde_motion_of_mars_in_2003",
+      "path": "test_gifs/holdout_suite/apparent_retrograde_motion_of_mars_in_2003.gif",
+      "source": "holdout_suite",
+      "rationale": "Astronomical animation of Mars retrograde motion. Meets: no transparent GCEs, 100% None/Keep disposal, global palette. Caveat: 0% offset subframes. 79 frames with stable color palette (black background, consistent planet colors).",
+      "structural_facts": {
+        "frames": 79,
+        "width": 400,
+        "height": 400,
+        "has_transparent_gces": false,
+        "none_keep_disposal_pct": 100.0,
+        "offset_subframes_pct": 0.0,
+        "has_global_palette": true,
+        "file_size_bytes": 73930
+      }
+    },
+    {
+      "name": "8_cell_simple",
+      "path": "test_gifs/holdout_suite/8_cell_simple.gif",
+      "source": "holdout_suite",
+      "rationale": "Mathematical 4D polytope visualization. Meets: no transparent GCEs, 100% None/Keep disposal, global palette. Caveat: 0% offset subframes. 48 frames with stable color palette (geometric shapes with consistent coloring).",
+      "structural_facts": {
+        "frames": 48,
+        "width": 256,
+        "height": 256,
+        "has_transparent_gces": false,
+        "none_keep_disposal_pct": 100.0,
+        "offset_subframes_pct": 0.0,
+        "has_global_palette": true,
+        "file_size_bytes": 703718
+      }
+    }
+  ],
+  "caveats": [
+    "No files in the available corpus have ≥50% offset subframes. All selected files are full-frame animations (0% offset). This is a significant deviation from the voyager-class definition.",
+    "The voyager-class definition may be too narrow for the available corpus. Consider either: (a) relaxing the offset subframes requirement, (b) expanding the corpus with files that have more offset subframes, or (c) reconsidering whether offset subframes are actually necessary for the study.",
+    "The 'offenders' manifest in holdout_suite contains only 3 files, none of which meet the offset subframes criterion.",
+    "The benchmark_suite contains no files that meet the strict criteria (all have 0% offset subframes)."
+  ],
+  "next_steps": [
+    "Proceed with Phase 2 (candidate implementation) using these 4 files as the voyager-class corpus.",
+    "During Phase 3 (encoding & measurement), document whether the lack of offset subframes affects the validity of the study conclusions.",
+    "Consider whether the study should be split into two phases: (a) full-frame animations (current corpus), and (b) offset-subframe animations (if corpus can be expanded)."
+  ],
+  "target_dimensions": "To be determined in Phase 2. Recommend a common target size (e.g., 320x240 or 640x480) for all candidates and baselines."
+}
