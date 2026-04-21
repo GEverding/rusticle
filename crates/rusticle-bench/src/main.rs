@@ -7,6 +7,7 @@
 
 mod adaptive_comparison;
 mod tiered_eval;
+mod voyager_repr_study;
 
 use rusticle::{Filter, Gif, OptLevel, QualityMetrics};
 use serde::{Deserialize, Serialize};
@@ -137,7 +138,7 @@ fn compute_quality_metrics(
             width,
             height,
         );
-        
+
         // Only accumulate metrics if comparison is valid
         if metrics.valid {
             total_psnr += metrics.psnr.min(100.0);
@@ -394,6 +395,14 @@ fn main() {
     }
     if args.len() > 1 && args[1] == "tiered-eval" {
         run_tiered_eval();
+        return;
+    }
+    if args.len() > 1 && args[1] == "voyager-repr-study" {
+        let output_dir = args.get(2).map(|s| s.as_str()).unwrap_or("outputs");
+        if let Err(e) = voyager_repr_study::run_study(Path::new(output_dir)) {
+            eprintln!("Error running voyager repr study: {}", e);
+            std::process::exit(1);
+        }
         return;
     }
 
@@ -795,19 +804,17 @@ fn report_corpus(report: &mut String, summary: &adaptive_comparison::ComparisonS
         let ra = result
             .profiles
             .get("rusticle_adaptive_bytes")
-            .map(|p| {
-                format!(
-                    "{} ({:.2}x)",
-                    p.output_bytes, p.compression_ratio
-                )
-            })
+            .map(|p| format!("{} ({:.2}x)", p.output_bytes, p.compression_ratio))
             .unwrap_or_else(|| "N/A".to_string());
         let fallback = result
             .profiles
             .get("rusticle_adaptive_bytes")
             .map(|p| {
                 if p.fallback {
-                    format!("YES ({})", p.fallback_reason.as_deref().unwrap_or("unknown"))
+                    format!(
+                        "YES ({})",
+                        p.fallback_reason.as_deref().unwrap_or("unknown")
+                    )
                 } else {
                     "NO".to_string()
                 }
@@ -855,16 +862,12 @@ fn report_findings(
 
     // Quality comparison
     report.push_str("**Quality Metrics (Adaptive vs Default):**\n\n");
-    let off_psnr_diff = off_agg.rusticle_adaptive_bytes.avg_psnr - off_agg.rusticle_default.avg_psnr;
-    let hold_psnr_diff = hold_agg.rusticle_adaptive_bytes.avg_psnr - hold_agg.rusticle_default.avg_psnr;
-    report.push_str(&format!(
-        "- Offenders PSNR: {:+.2} dB\n",
-        off_psnr_diff
-    ));
-    report.push_str(&format!(
-        "- Holdout PSNR: {:+.2} dB\n",
-        hold_psnr_diff
-    ));
+    let off_psnr_diff =
+        off_agg.rusticle_adaptive_bytes.avg_psnr - off_agg.rusticle_default.avg_psnr;
+    let hold_psnr_diff =
+        hold_agg.rusticle_adaptive_bytes.avg_psnr - hold_agg.rusticle_default.avg_psnr;
+    report.push_str(&format!("- Offenders PSNR: {:+.2} dB\n", off_psnr_diff));
+    report.push_str(&format!("- Holdout PSNR: {:+.2} dB\n", hold_psnr_diff));
 
     // Fallback rate
     report.push_str("\n**Fallback Rate:**\n\n");
@@ -892,10 +895,7 @@ fn report_fallback_analysis(
     for result in &offender_summary.results {
         if let Some(profile) = result.profiles.get("rusticle_adaptive_bytes") {
             if profile.fallback {
-                off_fallbacks.push((
-                    result.file_name.clone(),
-                    profile.fallback_reason.clone(),
-                ));
+                off_fallbacks.push((result.file_name.clone(), profile.fallback_reason.clone()));
             }
         }
     }
@@ -920,10 +920,7 @@ fn report_fallback_analysis(
     for result in &holdout_summary.results {
         if let Some(profile) = result.profiles.get("rusticle_adaptive_bytes") {
             if profile.fallback {
-                hold_fallbacks.push((
-                    result.file_name.clone(),
-                    profile.fallback_reason.clone(),
-                ));
+                hold_fallbacks.push((result.file_name.clone(), profile.fallback_reason.clone()));
             }
         }
     }
@@ -931,10 +928,7 @@ fn report_fallback_analysis(
     if hold_fallbacks.is_empty() {
         report.push_str("No fallbacks detected on holdout corpus.\n\n");
     } else {
-        report.push_str(&format!(
-            "Detected {} fallbacks:\n\n",
-            hold_fallbacks.len()
-        ));
+        report.push_str(&format!("Detected {} fallbacks:\n\n", hold_fallbacks.len()));
         report.push_str("| File | Reason |\n");
         report.push_str("|------|--------|\n");
         for (file, reason) in hold_fallbacks {
@@ -955,7 +949,9 @@ fn report_fallback_analysis(
     let hold_fallback_rate = hold_agg.adaptive_fallback_rate;
 
     if off_fallback_rate > 0.1 || hold_fallback_rate > 0.1 {
-        report.push_str("⚠️ **Fallback rate is elevated.** Investigate fallback causes before rollout.\n\n");
+        report.push_str(
+            "⚠️ **Fallback rate is elevated.** Investigate fallback causes before rollout.\n\n",
+        );
     } else {
         report.push_str("✓ **Fallback rate is acceptable** (<10%).\n\n");
     }
@@ -968,9 +964,11 @@ fn report_fallback_analysis(
         - hold_agg.rusticle_adaptive_bytes.avg_output_bytes)
         / hold_agg.rusticle_default.avg_output_bytes
         * 100.0;
-    
-    let off_quality_improvement = off_agg.rusticle_adaptive_bytes.avg_psnr - off_agg.rusticle_default.avg_psnr;
-    let hold_quality_improvement = hold_agg.rusticle_adaptive_bytes.avg_psnr - hold_agg.rusticle_default.avg_psnr;
+
+    let off_quality_improvement =
+        off_agg.rusticle_adaptive_bytes.avg_psnr - off_agg.rusticle_default.avg_psnr;
+    let hold_quality_improvement =
+        hold_agg.rusticle_adaptive_bytes.avg_psnr - hold_agg.rusticle_default.avg_psnr;
 
     if off_bytes_improvement > 5.0 || hold_bytes_improvement > 5.0 {
         report.push_str("✓ **Byte savings are significant** (>5%).\n\n");
@@ -981,13 +979,21 @@ fn report_fallback_analysis(
     }
 
     report.push_str("**Overall Assessment:**\n\n");
-    
+
     // Check for quality regressions
     let has_quality_regression = off_quality_improvement < -5.0 || hold_quality_improvement < -5.0;
-    
-    if off_fallback_rate < 0.05 && hold_fallback_rate < 0.05 && (off_bytes_improvement > 2.0 || hold_bytes_improvement > 2.0) && !has_quality_regression {
+
+    if off_fallback_rate < 0.05
+        && hold_fallback_rate < 0.05
+        && (off_bytes_improvement > 2.0 || hold_bytes_improvement > 2.0)
+        && !has_quality_regression
+    {
         report.push_str("🚀 **Adaptive bytes emission is ready for rollout.** Low fallback rate, measurable improvements, acceptable quality.\n");
-    } else if off_fallback_rate < 0.1 && hold_fallback_rate < 0.1 && off_bytes_improvement > 0.0 && hold_bytes_improvement > 0.0 {
+    } else if off_fallback_rate < 0.1
+        && hold_fallback_rate < 0.1
+        && off_bytes_improvement > 0.0
+        && hold_bytes_improvement > 0.0
+    {
         if has_quality_regression {
             report.push_str("⚠️ **Adaptive bytes emission shows promise but has quality concerns.** Byte savings are good, but PSNR regressions are significant.\n");
         } else {
@@ -1208,19 +1214,17 @@ fn report_tiered_corpus(report: &mut String, summary: &tiered_eval::TieredEvalSu
         let ra = result
             .profiles
             .get("rusticle_tiered_adaptive")
-            .map(|p| {
-                format!(
-                    "{} ({:.2}x)",
-                    p.output_bytes, p.compression_ratio
-                )
-            })
+            .map(|p| format!("{} ({:.2}x)", p.output_bytes, p.compression_ratio))
             .unwrap_or_else(|| "N/A".to_string());
         let fallback = result
             .profiles
             .get("rusticle_tiered_adaptive")
             .map(|p| {
                 if p.fallback {
-                    format!("YES ({})", p.fallback_reason.as_deref().unwrap_or("unknown"))
+                    format!(
+                        "YES ({})",
+                        p.fallback_reason.as_deref().unwrap_or("unknown")
+                    )
                 } else {
                     "NO".to_string()
                 }
@@ -1240,7 +1244,7 @@ fn report_tiered_analysis(
     holdout_summary: &tiered_eval::TieredEvalSummary,
 ) {
     report.push_str("### Tier-0 Decision Distribution\n\n");
-    
+
     report.push_str("**Offenders:**\n\n");
     for (decision, count) in &offender_summary.tiered_analysis.tier0_decision_distribution {
         let pct = *count as f64 / offender_summary.total_files as f64 * 100.0;
@@ -1258,12 +1262,18 @@ fn report_tiered_analysis(
     report.push_str("|--------|-----------|----------|\n");
     report.push_str(&format!(
         "| Avg Candidates Before Pruning | {:.1} | {:.1} |\n",
-        offender_summary.tiered_analysis.avg_candidates_before_pruning,
-        holdout_summary.tiered_analysis.avg_candidates_before_pruning
+        offender_summary
+            .tiered_analysis
+            .avg_candidates_before_pruning,
+        holdout_summary
+            .tiered_analysis
+            .avg_candidates_before_pruning
     ));
     report.push_str(&format!(
         "| Avg Candidates After Pruning | {:.1} | {:.1} |\n",
-        offender_summary.tiered_analysis.avg_candidates_after_pruning,
+        offender_summary
+            .tiered_analysis
+            .avg_candidates_after_pruning,
         holdout_summary.tiered_analysis.avg_candidates_after_pruning
     ));
     report.push_str(&format!(
@@ -1277,8 +1287,12 @@ fn report_tiered_analysis(
     report.push_str("|--------|-----------|----------|\n");
     report.push_str(&format!(
         "| Tier-2 Measurement Count | {} | {} |\n",
-        offender_summary.tiered_analysis.tier2_measurement_usage_count,
-        holdout_summary.tiered_analysis.tier2_measurement_usage_count
+        offender_summary
+            .tiered_analysis
+            .tier2_measurement_usage_count,
+        holdout_summary
+            .tiered_analysis
+            .tier2_measurement_usage_count
     ));
     report.push_str(&format!(
         "| Tier-2 Measurement Rate | {:.1}% | {:.1}% |\n",
@@ -1289,11 +1303,15 @@ fn report_tiered_analysis(
     report.push_str("\n### Sequence Optimizer Chunks\n\n");
     report.push_str(&format!(
         "- Offenders: {:.1} chunks/file (avg)\n",
-        offender_summary.tiered_analysis.avg_sequence_optimizer_chunks
+        offender_summary
+            .tiered_analysis
+            .avg_sequence_optimizer_chunks
     ));
     report.push_str(&format!(
         "- Holdout: {:.1} chunks/file (avg)\n",
-        holdout_summary.tiered_analysis.avg_sequence_optimizer_chunks
+        holdout_summary
+            .tiered_analysis
+            .avg_sequence_optimizer_chunks
     ));
 }
 
@@ -1331,29 +1349,21 @@ fn report_tiered_findings(
 
     // Quality comparison
     report.push_str("**Quality Metrics (Tiered vs Default):**\n\n");
-    let off_psnr_diff = off_agg.rusticle_tiered_adaptive.avg_psnr - off_agg.rusticle_default.avg_psnr;
-    let hold_psnr_diff = hold_agg.rusticle_tiered_adaptive.avg_psnr - hold_agg.rusticle_default.avg_psnr;
-    report.push_str(&format!(
-        "- Offenders PSNR: {:+.2} dB\n",
-        off_psnr_diff
-    ));
-    report.push_str(&format!(
-        "- Holdout PSNR: {:+.2} dB\n",
-        hold_psnr_diff
-    ));
+    let off_psnr_diff =
+        off_agg.rusticle_tiered_adaptive.avg_psnr - off_agg.rusticle_default.avg_psnr;
+    let hold_psnr_diff =
+        hold_agg.rusticle_tiered_adaptive.avg_psnr - hold_agg.rusticle_default.avg_psnr;
+    report.push_str(&format!("- Offenders PSNR: {:+.2} dB\n", off_psnr_diff));
+    report.push_str(&format!("- Holdout PSNR: {:+.2} dB\n", hold_psnr_diff));
 
     // Runtime overhead
-    let off_runtime_ratio = off_agg.rusticle_tiered_adaptive.avg_runtime_ms / off_agg.rusticle_default.avg_runtime_ms;
-    let hold_runtime_ratio = hold_agg.rusticle_tiered_adaptive.avg_runtime_ms / hold_agg.rusticle_default.avg_runtime_ms;
+    let off_runtime_ratio =
+        off_agg.rusticle_tiered_adaptive.avg_runtime_ms / off_agg.rusticle_default.avg_runtime_ms;
+    let hold_runtime_ratio =
+        hold_agg.rusticle_tiered_adaptive.avg_runtime_ms / hold_agg.rusticle_default.avg_runtime_ms;
     report.push_str("\n**Runtime Overhead (Tiered vs Default):**\n\n");
-    report.push_str(&format!(
-        "- Offenders: {:.2}x\n",
-        off_runtime_ratio
-    ));
-    report.push_str(&format!(
-        "- Holdout: {:.2}x\n",
-        hold_runtime_ratio
-    ));
+    report.push_str(&format!("- Offenders: {:.2}x\n", off_runtime_ratio));
+    report.push_str(&format!("- Holdout: {:.2}x\n", hold_runtime_ratio));
 }
 
 fn report_tiered_fallback_analysis(
@@ -1366,10 +1376,7 @@ fn report_tiered_fallback_analysis(
     for result in &offender_summary.results {
         if let Some(profile) = result.profiles.get("rusticle_tiered_adaptive") {
             if profile.fallback {
-                off_fallbacks.push((
-                    result.file_name.clone(),
-                    profile.fallback_reason.clone(),
-                ));
+                off_fallbacks.push((result.file_name.clone(), profile.fallback_reason.clone()));
             }
         }
     }
@@ -1394,10 +1401,7 @@ fn report_tiered_fallback_analysis(
     for result in &holdout_summary.results {
         if let Some(profile) = result.profiles.get("rusticle_tiered_adaptive") {
             if profile.fallback {
-                hold_fallbacks.push((
-                    result.file_name.clone(),
-                    profile.fallback_reason.clone(),
-                ));
+                hold_fallbacks.push((result.file_name.clone(), profile.fallback_reason.clone()));
             }
         }
     }
@@ -1405,10 +1409,7 @@ fn report_tiered_fallback_analysis(
     if hold_fallbacks.is_empty() {
         report.push_str("No fallbacks detected on holdout corpus.\n\n");
     } else {
-        report.push_str(&format!(
-            "Detected {} fallbacks:\n\n",
-            hold_fallbacks.len()
-        ));
+        report.push_str(&format!("Detected {} fallbacks:\n\n", hold_fallbacks.len()));
         report.push_str("| File | Reason |\n");
         report.push_str("|------|--------|\n");
         for (file, reason) in hold_fallbacks {
@@ -1434,7 +1435,9 @@ fn report_tiered_recommendations(
     let hold_fallback_rate = hold_agg.tiered_fallback_rate;
 
     if off_fallback_rate > 0.1 || hold_fallback_rate > 0.1 {
-        report.push_str("⚠️ **Fallback rate is elevated.** Investigate fallback causes before rollout.\n\n");
+        report.push_str(
+            "⚠️ **Fallback rate is elevated.** Investigate fallback causes before rollout.\n\n",
+        );
     } else {
         report.push_str("✓ **Fallback rate is acceptable** (<10%).\n\n");
     }
@@ -1447,9 +1450,11 @@ fn report_tiered_recommendations(
         - hold_agg.rusticle_tiered_adaptive.avg_output_bytes)
         / hold_agg.rusticle_default.avg_output_bytes
         * 100.0;
-    
-    let off_quality_improvement = off_agg.rusticle_tiered_adaptive.avg_psnr - off_agg.rusticle_default.avg_psnr;
-    let hold_quality_improvement = hold_agg.rusticle_tiered_adaptive.avg_psnr - hold_agg.rusticle_default.avg_psnr;
+
+    let off_quality_improvement =
+        off_agg.rusticle_tiered_adaptive.avg_psnr - off_agg.rusticle_default.avg_psnr;
+    let hold_quality_improvement =
+        hold_agg.rusticle_tiered_adaptive.avg_psnr - hold_agg.rusticle_default.avg_psnr;
 
     if off_bytes_improvement > 5.0 || hold_bytes_improvement > 5.0 {
         report.push_str("✓ **Byte savings are significant** (>5%).\n\n");
@@ -1460,17 +1465,27 @@ fn report_tiered_recommendations(
     }
 
     report.push_str("**Overall Assessment:**\n\n");
-    
+
     // Check for quality regressions
     let has_quality_regression = off_quality_improvement < -5.0 || hold_quality_improvement < -5.0;
-    
-    if off_fallback_rate < 0.05 && hold_fallback_rate < 0.05 && (off_bytes_improvement > 2.0 || hold_bytes_improvement > 2.0) && !has_quality_regression {
+
+    if off_fallback_rate < 0.05
+        && hold_fallback_rate < 0.05
+        && (off_bytes_improvement > 2.0 || hold_bytes_improvement > 2.0)
+        && !has_quality_regression
+    {
         report.push_str("🚀 **Tiered optimizer is ready for rollout.** Low fallback rate, measurable improvements, acceptable quality.\n");
-    } else if off_fallback_rate < 0.1 && hold_fallback_rate < 0.1 && off_bytes_improvement > 0.0 && hold_bytes_improvement > 0.0 {
+    } else if off_fallback_rate < 0.1
+        && hold_fallback_rate < 0.1
+        && off_bytes_improvement > 0.0
+        && hold_bytes_improvement > 0.0
+    {
         if has_quality_regression {
             report.push_str("⚠️ **Tiered optimizer shows promise but has quality concerns.** Byte savings are good, but PSNR regressions are significant.\n");
         } else {
-            report.push_str("📊 **Tiered optimizer is promising.** Continue optimization and monitoring.\n");
+            report.push_str(
+                "📊 **Tiered optimizer is promising.** Continue optimization and monitoring.\n",
+            );
         }
     } else {
         report.push_str("🔧 **Tiered optimizer needs more work.** Address fallback causes and quality regressions.\n");
