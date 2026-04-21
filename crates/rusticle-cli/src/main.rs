@@ -6,9 +6,10 @@ use tikv_jemallocator::Jemalloc;
 static GLOBAL: Jemalloc = Jemalloc;
 
 mod adaptive_harness;
+mod voyager_study;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use rusticle::{AdaptiveConfig, Filter, Gif, OptLevel, QualityMetrics};
+use rusticle::{AdaptiveConfig, Filter, Gif, OptLevel, QualityMetrics, TwoPathConfig};
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -31,6 +32,8 @@ enum Command {
     Quality(QualityArgs),
     /// Run adaptive encoding benchmark harness.
     AdaptiveHarness(AdaptiveHarnessArgs),
+    /// Run corrected voyager-class study.
+    VoyagerStudy(VoyagerStudyArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -72,6 +75,14 @@ struct ResizeArgs {
     /// Emit adaptive encoding telemetry to stderr (requires --adaptive).
     #[arg(long)]
     adaptive_telemetry: bool,
+
+    /// Two-path optimizer strategy: legacy (default), auto (classifier), path-a (forced), path-b (forced).
+    #[arg(long, value_enum, default_value_t = CliOptimizerStrategy::Legacy)]
+    optimizer_strategy: CliOptimizerStrategy,
+
+    /// Emit two-path router telemetry to stderr (requires --optimizer-strategy != legacy).
+    #[arg(long)]
+    optimizer_telemetry: bool,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -93,6 +104,16 @@ struct AdaptiveHarnessArgs {
     holdout_dir: Option<PathBuf>,
 
     /// Output directory for reports (default: outputs/).
+    #[arg(long, default_value = "outputs")]
+    output_dir: PathBuf,
+}
+
+#[derive(Debug, Clone, Args)]
+struct VoyagerStudyArgs {
+    /// Input voyager GIF file.
+    input: PathBuf,
+
+    /// Output directory for study results (default: outputs/).
     #[arg(long, default_value = "outputs")]
     output_dir: PathBuf,
 }
@@ -133,6 +154,27 @@ impl From<CliOptLevel> for OptLevel {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum CliOptimizerStrategy {
+    Legacy,
+    Auto,
+    #[value(name = "path-a")]
+    PathA,
+    #[value(name = "path-b")]
+    PathB,
+}
+
+impl From<CliOptimizerStrategy> for rusticle::OptimizerStrategy {
+    fn from(value: CliOptimizerStrategy) -> Self {
+        match value {
+            CliOptimizerStrategy::Legacy => rusticle::OptimizerStrategy::Legacy,
+            CliOptimizerStrategy::Auto => rusticle::OptimizerStrategy::Auto,
+            CliOptimizerStrategy::PathA => rusticle::OptimizerStrategy::PathA,
+            CliOptimizerStrategy::PathB => rusticle::OptimizerStrategy::PathB,
+        }
+    }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
@@ -140,6 +182,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         Command::Resize(args) => run_resize(args),
         Command::Quality(args) => compare_quality(&args.original, &args.processed),
         Command::AdaptiveHarness(args) => run_adaptive_harness(args),
+        Command::VoyagerStudy(args) => run_voyager_study(args),
     }
 }
 
@@ -175,7 +218,35 @@ fn run_resize(args: ResizeArgs) -> Result<(), Box<dyn Error>> {
     };
 
     let processed = if let Some(level) = args.optimize {
-        processed.optimize(level.into())
+        let opt_level = level.into();
+        
+        // Use two-path router if strategy is not legacy
+        let processed = if args.optimizer_strategy != CliOptimizerStrategy::Legacy {
+            let config = TwoPathConfig {
+                strategy: args.optimizer_strategy.into(),
+                path_a_config: Default::default(),
+                path_b_config: rusticle::PathBConfig {
+                    level: opt_level,
+                },
+                emit_telemetry: args.optimizer_telemetry,
+            };
+            
+            match rusticle::route_optimize(&processed, opt_level, config) {
+                Ok(result) => {
+                    // Create a new Gif with the routed frames
+                    let mut routed = processed.clone();
+                    routed.frames = result.frames;
+                    routed
+                }
+                Err(e) => {
+                    eprintln!("[two-path-router] routing failed: {}, falling back to legacy optimize", e);
+                    processed.optimize(opt_level)
+                }
+            }
+        } else {
+            processed.optimize(opt_level)
+        };
+        processed
     } else {
         processed
     };
@@ -420,10 +491,7 @@ fn run_adaptive_harness(args: AdaptiveHarnessArgs) -> Result<(), Box<dyn Error>>
     fs::create_dir_all(&args.output_dir)?;
 
     // Run the harness
-    let report = adaptive_harness::run_harness(
-        &args.benchmark_dir,
-        args.holdout_dir.as_deref(),
-    )?;
+    let report = adaptive_harness::run_harness(&args.benchmark_dir, args.holdout_dir.as_deref())?;
 
     // Write JSON report
     let json_path = args.output_dir.join("adaptive_harness_report.json");
@@ -441,12 +509,21 @@ fn run_adaptive_harness(args: AdaptiveHarnessArgs) -> Result<(), Box<dyn Error>>
     eprintln!();
     eprintln!("=== ADAPTIVE HARNESS SUMMARY ===");
     eprintln!("Total files: {}", report.total_files);
-    eprintln!("Successful: {} ({:.1}%)", report.successful_files, 
-        (report.successful_files as f32 / report.total_files as f32) * 100.0);
-    eprintln!("Fallback: {} ({:.1}%)", report.fallback_files,
-        (report.fallback_files as f32 / report.total_files as f32) * 100.0);
+    eprintln!(
+        "Successful: {} ({:.1}%)",
+        report.successful_files,
+        (report.successful_files as f32 / report.total_files as f32) * 100.0
+    );
+    eprintln!(
+        "Fallback: {} ({:.1}%)",
+        report.fallback_files,
+        (report.fallback_files as f32 / report.total_files as f32) * 100.0
+    );
     eprintln!("Global avg score: {:.3}", report.global_avg_score);
-    eprintln!("Global avg estimated bytes: {}", report.global_avg_estimated_bytes);
+    eprintln!(
+        "Global avg estimated bytes: {}",
+        report.global_avg_estimated_bytes
+    );
     eprintln!();
     eprintln!("Taxonomy distribution:");
     for (taxonomy, count) in &report.taxonomy_summary {
@@ -454,7 +531,166 @@ fn run_adaptive_harness(args: AdaptiveHarnessArgs) -> Result<(), Box<dyn Error>>
     }
     eprintln!();
     eprintln!("Voyager-like offenders: {}", report.voyager_offenders.len());
-    eprintln!("Disposal-heavy offenders: {}", report.disposal_heavy_offenders.len());
+    eprintln!(
+        "Disposal-heavy offenders: {}",
+        report.disposal_heavy_offenders.len()
+    );
 
     Ok(())
+}
+
+fn run_voyager_study(args: VoyagerStudyArgs) -> Result<(), Box<dyn Error>> {
+    eprintln!("=== VOYAGER CORRECTED STUDY ===");
+    eprintln!("Input: {}", args.input.display());
+    eprintln!("Target: 160x120");
+    eprintln!();
+
+    fs::create_dir_all(&args.output_dir)?;
+
+    // Run the study
+    let results = voyager_study::run_voyager_study(&args.input, &args.output_dir)?;
+
+    // Write JSON results
+    let json_path = args.output_dir.join("voyager_corrected_study_results.json");
+    let json = serde_json::to_string_pretty(&results)?;
+    fs::write(&json_path, json)?;
+    eprintln!("✓ JSON results: {}", json_path.display());
+
+    // Write Markdown report
+    let md_path = args.output_dir.join("voyager_corrected_study_report.md");
+    let md_report = format_voyager_report(&results);
+    fs::write(&md_path, md_report)?;
+    eprintln!("✓ Markdown report: {}", md_path.display());
+
+    // Print summary
+    eprintln!();
+    eprintln!("=== RESULTS SUMMARY ===");
+    eprintln!("Input file: {}", results.input_file);
+    eprintln!("Input bytes: {}", results.input_bytes);
+    eprintln!("Target dimensions: {}x{}", results.target_width, results.target_height);
+    eprintln!();
+    eprintln!("Candidates:");
+    for candidate in &results.candidates {
+        if let Some(err) = &candidate.error {
+            eprintln!(
+                "  {}: ERROR - {}",
+                candidate.name, err
+            );
+        } else {
+            eprintln!(
+                "  {}: {} bytes ({:.1}ms, avg patch area: {:.0}, transparent: {:.1}%)",
+                candidate.name,
+                candidate.output_bytes,
+                candidate.runtime_ms as f64,
+                candidate.avg_patch_area,
+                candidate.transparent_usage * 100.0
+            );
+        }
+    }
+    eprintln!();
+    eprintln!("Best by bytes: {}", results.best_bytes);
+    eprintln!("Recommendation: {}", results.recommendation);
+
+    Ok(())
+}
+
+fn format_voyager_report(results: &voyager_study::StudyResults) -> String {
+    let mut report = String::new();
+    report.push_str("# Voyager Corrected Study Results\n\n");
+    report.push_str(&format!("**Input:** {}\n", results.input_file));
+    report.push_str(&format!("**Input bytes:** {}\n", results.input_bytes));
+    report.push_str(&format!(
+        "**Target dimensions:** {}x{}\n\n",
+        results.target_width, results.target_height
+    ));
+
+    report.push_str("## Candidate Metrics\n\n");
+    report.push_str("| Candidate | Bytes | Runtime (ms) | Avg Patch Area | Transparent % | Status |\n");
+    report.push_str("|-----------|-------|--------------|----------------|---------------|--------|\n");
+
+    for candidate in &results.candidates {
+        let status = if let Some(err) = &candidate.error {
+            format!("ERROR: {}", err)
+        } else {
+            "OK".to_string()
+        };
+
+        report.push_str(&format!(
+            "| {} | {} | {} | {:.0} | {:.1}% | {} |\n",
+            candidate.name,
+            candidate.output_bytes,
+            candidate.runtime_ms,
+            candidate.avg_patch_area,
+            candidate.transparent_usage * 100.0,
+            status
+        ));
+    }
+
+    report.push_str("\n## Analysis\n\n");
+    report.push_str(&format!("**Best candidate by bytes:** {}\n\n", results.best_bytes));
+
+    // Compute compression ratios
+    let successful: Vec<_> = results
+        .candidates
+        .iter()
+        .filter(|c| c.error.is_none())
+        .collect();
+
+    if !successful.is_empty() {
+        report.push_str("### Compression Ratios\n\n");
+        for candidate in &successful {
+            let ratio = candidate.output_bytes as f64 / results.input_bytes as f64;
+            report.push_str(&format!(
+                "- {}: {:.2}% of original\n",
+                candidate.name,
+                ratio * 100.0
+            ));
+        }
+        report.push('\n');
+    }
+
+    // Identify key dimensions
+    report.push_str("### Key Dimensions\n\n");
+
+    let transparent_usage: Vec<_> = successful
+        .iter()
+        .filter(|c| c.transparent_usage > 0.0)
+        .collect();
+
+    if !transparent_usage.is_empty() {
+        report.push_str("**Transparent bbox usage detected:**\n");
+        for candidate in transparent_usage {
+            report.push_str(&format!(
+                "- {}: {:.1}% transparent pixels in patches\n",
+                candidate.name,
+                candidate.transparent_usage * 100.0
+            ));
+        }
+        report.push_str("\nThis indicates that transparent unchanged pixels are present in the animation.\n\n");
+    }
+
+    let patch_areas: Vec<_> = successful
+        .iter()
+        .filter(|c| c.avg_patch_area > 0.0)
+        .collect();
+
+    if !patch_areas.is_empty() {
+        report.push_str("**Patch geometry:**\n");
+        for candidate in patch_areas {
+            let canvas_area = (results.target_width * results.target_height) as f64;
+            let patch_ratio = candidate.avg_patch_area / canvas_area;
+            report.push_str(&format!(
+                "- {}: avg patch {:.0} pixels ({:.1}% of canvas)\n",
+                candidate.name,
+                candidate.avg_patch_area,
+                patch_ratio * 100.0
+            ));
+        }
+        report.push('\n');
+    }
+
+    report.push_str("## Recommendation\n\n");
+    report.push_str(&format!("{}\n", results.recommendation));
+
+    report
 }
