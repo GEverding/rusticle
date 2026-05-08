@@ -1,6 +1,25 @@
 use rusticle::{DisposalMethod, Frame, Gif, LoopCount};
 use std::time::Duration;
 
+/// Create a simple test frame with a solid color.
+pub fn make_frame(width: u16, height: u16, color: [u8; 4]) -> Frame {
+    let mut pixels = Vec::new();
+    for _ in 0..(width as usize * height as usize) {
+        pixels.extend_from_slice(&color);
+    }
+
+    Frame {
+        pixels,
+        delay: Duration::from_millis(100),
+        dispose: DisposalMethod::None,
+        local_palette: None,
+        left: 0,
+        top: 0,
+        width,
+        height,
+    }
+}
+
 /// Create a simple test GIF with solid color frames
 pub fn create_test_gif(width: u16, height: u16, frame_count: usize) -> Gif {
     let mut frames = Vec::new();

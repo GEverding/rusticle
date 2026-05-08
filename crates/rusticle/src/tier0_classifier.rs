@@ -557,7 +557,10 @@ mod tests {
 
     #[test]
     fn test_decision_state_names() {
-        assert_eq!(Tier0Decision::EarlyExitStructural.name(), "early-exit-structural");
+        assert_eq!(
+            Tier0Decision::EarlyExitStructural.name(),
+            "early-exit-structural"
+        );
         assert_eq!(Tier0Decision::NeedsTier1.name(), "needs-tier1");
         assert_eq!(Tier0Decision::NeedsTier2.name(), "needs-tier2");
     }

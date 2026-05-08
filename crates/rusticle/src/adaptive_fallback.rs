@@ -31,13 +31,13 @@
 //! }
 //! ```
 
+use crate::adaptive_ir::CanonicalSequence;
 use crate::error::{Error, Result};
 use crate::materialize::Materializer;
 use crate::palette_realize::{PaletteRealization, PaletteRealizer};
 use crate::palette_strategy::PaletteStrategy;
 use crate::scoring::FrameDecision;
 use crate::types::Gif;
-use crate::adaptive_ir::CanonicalSequence;
 
 /// Stage in the adaptive bytes preparation pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -114,11 +114,7 @@ impl FallbackTelemetry {
     }
 
     /// Create a fallback telemetry record.
-    pub fn fallback(
-        stage: AdaptiveStage,
-        error: &Error,
-        frames_processed: usize,
-    ) -> Self {
+    pub fn fallback(stage: AdaptiveStage, error: &Error, frames_processed: usize) -> Self {
         let error_summary = format!("{}", error);
         let error_summary = if error_summary.len() > 256 {
             error_summary[..256].to_string()
@@ -153,7 +149,11 @@ impl FallbackTelemetry {
             let _ = writeln!(json, r#"  "failed_stage":"{}","#, stage.name());
         }
 
-        let _ = writeln!(json, r#"  "fallback_reason":"{}","#, self.fallback_reason.code());
+        let _ = writeln!(
+            json,
+            r#"  "fallback_reason":"{}","#,
+            self.fallback_reason.code()
+        );
 
         if let Some(ref error) = self.error_summary {
             let escaped = error.replace('"', "\\\"");
@@ -178,10 +178,7 @@ pub struct AdaptiveBytesPreparer {
 
 impl AdaptiveBytesPreparer {
     /// Create a new preparer for the given decisions and canonical sequence.
-    pub fn new(
-        decisions: Vec<FrameDecision>,
-        canonical_seq: CanonicalSequence,
-    ) -> Self {
+    pub fn new(decisions: Vec<FrameDecision>, canonical_seq: CanonicalSequence) -> Self {
         Self {
             decisions,
             canonical_seq,
@@ -205,20 +202,19 @@ impl AdaptiveBytesPreparer {
     pub fn prepare_with_fallback(
         &self,
         source_gif: &Gif,
-    ) -> std::result::Result<(PaletteRealization, FallbackTelemetry), (String, FallbackTelemetry)> {
+    ) -> std::result::Result<(PaletteRealization, FallbackTelemetry), (String, FallbackTelemetry)>
+    {
         // Step 1: Materialize frames
-        let materialized_frames = match Materializer::materialize_sequence(&self.decisions, &self.canonical_seq) {
-            Ok(frames) => frames,
-            Err(e) => {
-                let telemetry = FallbackTelemetry::fallback(
-                    AdaptiveStage::Materialization,
-                    &e,
-                    0,
-                );
-                let reason = format!("materialization failed: {}", e);
-                return Err((reason, telemetry));
-            }
-        };
+        let materialized_frames =
+            match Materializer::materialize_sequence(&self.decisions, &self.canonical_seq) {
+                Ok(frames) => frames,
+                Err(e) => {
+                    let telemetry =
+                        FallbackTelemetry::fallback(AdaptiveStage::Materialization, &e, 0);
+                    let reason = format!("materialization failed: {}", e);
+                    return Err((reason, telemetry));
+                }
+            };
 
         let frames_materialized = materialized_frames.len();
 
@@ -231,30 +227,24 @@ impl AdaptiveBytesPreparer {
         };
 
         // Step 3: Realize palettes
-        let realization = match PaletteRealizer::realize(
-            &materialized_frames,
-            palette_strategy,
-            source_gif,
-        ) {
-            Ok(r) => r,
-            Err(e) => {
-                let telemetry = FallbackTelemetry::fallback(
-                    AdaptiveStage::PaletteRealization,
-                    &e,
-                    frames_materialized,
-                );
-                let reason = format!("palette realization failed: {}", e);
-                return Err((reason, telemetry));
-            }
-        };
+        let realization =
+            match PaletteRealizer::realize(&materialized_frames, palette_strategy, source_gif) {
+                Ok(r) => r,
+                Err(e) => {
+                    let telemetry = FallbackTelemetry::fallback(
+                        AdaptiveStage::PaletteRealization,
+                        &e,
+                        frames_materialized,
+                    );
+                    let reason = format!("palette realization failed: {}", e);
+                    return Err((reason, telemetry));
+                }
+            };
 
         // Step 4: Pre-encode validation
         if let Err(e) = Self::validate_pre_encode(&realization) {
-            let telemetry = FallbackTelemetry::fallback(
-                AdaptiveStage::PreEncodePrep,
-                &e,
-                frames_materialized,
-            );
+            let telemetry =
+                FallbackTelemetry::fallback(AdaptiveStage::PreEncodePrep, &e, frames_materialized);
             let reason = format!("pre-encode validation failed: {}", e);
             return Err((reason, telemetry));
         }
@@ -268,17 +258,19 @@ impl AdaptiveBytesPreparer {
         // Check that all frames have indices
         for (i, frame) in realization.frames.iter().enumerate() {
             if frame.indices.is_empty() && frame.width > 0 && frame.height > 0 {
-                return Err(Error::EncodeError(
-                    format!("frame {} has no indices but non-zero dimensions", i)
-                ));
+                return Err(Error::EncodeError(format!(
+                    "frame {} has no indices but non-zero dimensions",
+                    i
+                )));
             }
 
             // Check that indices are valid (0-255)
             for (j, &idx) in frame.indices.iter().enumerate() {
                 if idx as usize >= 256 {
-                    return Err(Error::EncodeError(
-                        format!("frame {} pixel {} has invalid index {}", i, j, idx)
-                    ));
+                    return Err(Error::EncodeError(format!(
+                        "frame {} pixel {} has invalid index {}",
+                        i, j, idx
+                    )));
                 }
             }
         }
@@ -303,9 +295,9 @@ mod tests {
         for i in 0..frame_count {
             let mut pixels = vec![0u8; (width as usize) * (height as usize) * 4];
             let color = [
-                (255, 0, 0, 255),     // Red
-                (0, 255, 0, 255),     // Green
-                (0, 0, 255, 255),     // Blue
+                (255, 0, 0, 255), // Red
+                (0, 255, 0, 255), // Green
+                (0, 0, 255, 255), // Blue
             ][i % 3];
 
             for chunk in pixels.chunks_exact_mut(4) {
@@ -348,41 +340,38 @@ mod tests {
     #[test]
     fn test_fallback_telemetry_materialization_failure() {
         let error = Error::EncodeError("test error".to_string());
-        let telemetry = FallbackTelemetry::fallback(
-            AdaptiveStage::Materialization,
-            &error,
-            0,
-        );
+        let telemetry = FallbackTelemetry::fallback(AdaptiveStage::Materialization, &error, 0);
 
         assert!(telemetry.fallback_used);
         assert_eq!(telemetry.failed_stage, Some(AdaptiveStage::Materialization));
-        assert_eq!(telemetry.fallback_reason, FallbackReason::MaterializationFailed);
+        assert_eq!(
+            telemetry.fallback_reason,
+            FallbackReason::MaterializationFailed
+        );
         assert!(telemetry.error_summary.is_some());
     }
 
     #[test]
     fn test_fallback_telemetry_palette_realization_failure() {
         let error = Error::EncodeError("quantization failed".to_string());
-        let telemetry = FallbackTelemetry::fallback(
-            AdaptiveStage::PaletteRealization,
-            &error,
-            2,
-        );
+        let telemetry = FallbackTelemetry::fallback(AdaptiveStage::PaletteRealization, &error, 2);
 
         assert!(telemetry.fallback_used);
-        assert_eq!(telemetry.failed_stage, Some(AdaptiveStage::PaletteRealization));
-        assert_eq!(telemetry.fallback_reason, FallbackReason::PaletteRealizationFailed);
+        assert_eq!(
+            telemetry.failed_stage,
+            Some(AdaptiveStage::PaletteRealization)
+        );
+        assert_eq!(
+            telemetry.fallback_reason,
+            FallbackReason::PaletteRealizationFailed
+        );
         assert_eq!(telemetry.frames_processed, 2);
     }
 
     #[test]
     fn test_fallback_telemetry_to_json() {
         let error = Error::EncodeError("test error".to_string());
-        let telemetry = FallbackTelemetry::fallback(
-            AdaptiveStage::Materialization,
-            &error,
-            1,
-        );
+        let telemetry = FallbackTelemetry::fallback(AdaptiveStage::Materialization, &error, 1);
 
         let json = telemetry.to_json();
         assert!(json.contains("adaptive_fallback"));
@@ -394,15 +383,27 @@ mod tests {
     #[test]
     fn test_adaptive_stage_names() {
         assert_eq!(AdaptiveStage::Materialization.name(), "materialization");
-        assert_eq!(AdaptiveStage::PaletteRealization.name(), "palette_realization");
+        assert_eq!(
+            AdaptiveStage::PaletteRealization.name(),
+            "palette_realization"
+        );
         assert_eq!(AdaptiveStage::PreEncodePrep.name(), "pre_encode_prep");
     }
 
     #[test]
     fn test_fallback_reason_codes() {
-        assert_eq!(FallbackReason::MaterializationFailed.code(), "materialization_failed");
-        assert_eq!(FallbackReason::PaletteRealizationFailed.code(), "palette_realization_failed");
-        assert_eq!(FallbackReason::PreEncodePrepFailed.code(), "pre_encode_prep_failed");
+        assert_eq!(
+            FallbackReason::MaterializationFailed.code(),
+            "materialization_failed"
+        );
+        assert_eq!(
+            FallbackReason::PaletteRealizationFailed.code(),
+            "palette_realization_failed"
+        );
+        assert_eq!(
+            FallbackReason::PreEncodePrepFailed.code(),
+            "pre_encode_prep_failed"
+        );
     }
 
     #[test]
@@ -446,22 +447,23 @@ mod tests {
         let seq = CanonicalSequenceBuilder::build(&gif).expect("Failed to build sequence");
 
         // Create a decision with an out-of-bounds frame index
-        let decisions = vec![
-            FrameDecision {
-                frame_index: 999, // Out of bounds
-                chosen_candidate: CandidateRepresentation::FullFrame,
-                chosen_palette_strategy: PaletteStrategy::DeriveSequenceGlobalPreferred,
-                score_breakdown: ScoreBreakdown::zero(),
-                alternatives: vec![],
-                reason: DecisionReason::LowestScore,
-                explanation: "test".to_string(),
-            },
-        ];
+        let decisions = vec![FrameDecision {
+            frame_index: 999, // Out of bounds
+            chosen_candidate: CandidateRepresentation::FullFrame,
+            chosen_palette_strategy: PaletteStrategy::DeriveSequenceGlobalPreferred,
+            score_breakdown: ScoreBreakdown::zero(),
+            alternatives: vec![],
+            reason: DecisionReason::LowestScore,
+            explanation: "test".to_string(),
+        }];
 
         let preparer = AdaptiveBytesPreparer::new(decisions, seq);
         let result = preparer.prepare_with_fallback(&gif);
 
-        assert!(result.is_err(), "Should trigger fallback on materialization failure");
+        assert!(
+            result.is_err(),
+            "Should trigger fallback on materialization failure"
+        );
         let (reason, telemetry) = result.unwrap_err();
         assert!(telemetry.fallback_used);
         assert_eq!(telemetry.failed_stage, Some(AdaptiveStage::Materialization));
@@ -473,17 +475,15 @@ mod tests {
         let gif = create_test_gif(50, 50, 1);
         let seq = CanonicalSequenceBuilder::build(&gif).expect("Failed to build sequence");
 
-        let decisions = vec![
-            FrameDecision {
-                frame_index: 999, // Out of bounds
-                chosen_candidate: CandidateRepresentation::FullFrame,
-                chosen_palette_strategy: PaletteStrategy::DeriveSequenceGlobalPreferred,
-                score_breakdown: ScoreBreakdown::zero(),
-                alternatives: vec![],
-                reason: DecisionReason::LowestScore,
-                explanation: "test".to_string(),
-            },
-        ];
+        let decisions = vec![FrameDecision {
+            frame_index: 999, // Out of bounds
+            chosen_candidate: CandidateRepresentation::FullFrame,
+            chosen_palette_strategy: PaletteStrategy::DeriveSequenceGlobalPreferred,
+            score_breakdown: ScoreBreakdown::zero(),
+            alternatives: vec![],
+            reason: DecisionReason::LowestScore,
+            explanation: "test".to_string(),
+        }];
 
         let preparer = AdaptiveBytesPreparer::new(decisions, seq);
         let result = preparer.prepare_with_fallback(&gif);
@@ -500,17 +500,15 @@ mod tests {
         let gif = create_test_gif(50, 50, 1);
         let seq = CanonicalSequenceBuilder::build(&gif).expect("Failed to build sequence");
 
-        let decisions = vec![
-            FrameDecision {
-                frame_index: 0,
-                chosen_candidate: CandidateRepresentation::FullFrame,
-                chosen_palette_strategy: PaletteStrategy::DeriveSequenceGlobalPreferred,
-                score_breakdown: ScoreBreakdown::zero(),
-                alternatives: vec![],
-                reason: DecisionReason::LowestScore,
-                explanation: "test".to_string(),
-            },
-        ];
+        let decisions = vec![FrameDecision {
+            frame_index: 0,
+            chosen_candidate: CandidateRepresentation::FullFrame,
+            chosen_palette_strategy: PaletteStrategy::DeriveSequenceGlobalPreferred,
+            score_breakdown: ScoreBreakdown::zero(),
+            alternatives: vec![],
+            reason: DecisionReason::LowestScore,
+            explanation: "test".to_string(),
+        }];
 
         let preparer = AdaptiveBytesPreparer::new(decisions, seq);
         let result = preparer.prepare_with_fallback(&gif);

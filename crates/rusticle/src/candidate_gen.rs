@@ -143,7 +143,10 @@ impl CandidateGenerator {
     }
 
     /// Generate exact opaque bbox candidate.
-    fn generate_opaque_bbox_candidate(frame_idx: usize, frame: &CanonicalFrame) -> Option<Candidate> {
+    fn generate_opaque_bbox_candidate(
+        frame_idx: usize,
+        frame: &CanonicalFrame,
+    ) -> Option<Candidate> {
         // Compute tight bbox around opaque pixels in source patch
         let bbox = Self::compute_opaque_bbox(&frame.source_patch);
 
@@ -154,7 +157,8 @@ impl CandidateGenerator {
 
         // Don't generate if bbox is the same as the full source patch
         // (in that case, full frame candidate is sufficient)
-        let source_area = (frame.source_patch.width as usize) * (frame.source_patch.height as usize);
+        let source_area =
+            (frame.source_patch.width as usize) * (frame.source_patch.height as usize);
         if bbox.area() >= source_area {
             return None;
         }
@@ -162,7 +166,10 @@ impl CandidateGenerator {
         Some(Candidate {
             frame_index: frame_idx,
             representation: CandidateRepresentation::ExactOpaqueBbox { bbox },
-            metadata: Self::build_metadata(frame, CandidateRepresentation::ExactOpaqueBbox { bbox }),
+            metadata: Self::build_metadata(
+                frame,
+                CandidateRepresentation::ExactOpaqueBbox { bbox },
+            ),
         })
     }
 
@@ -193,7 +200,10 @@ impl CandidateGenerator {
     }
 
     /// Generate minimal/no-op candidate only if semantically safe.
-    fn generate_minimal_noop_candidate(frame_idx: usize, frame: &CanonicalFrame) -> Option<Candidate> {
+    fn generate_minimal_noop_candidate(
+        frame_idx: usize,
+        frame: &CanonicalFrame,
+    ) -> Option<Candidate> {
         // Only safe if no pixels changed. If pixels changed, we must emit a frame to display them.
         // The disposal method is irrelevant here - if pixels changed, we can't skip the frame.
         if frame.changed_region.changed_pixel_count != 0 {
@@ -289,7 +299,10 @@ impl CandidateGenerator {
     }
 
     /// Build metadata for a candidate.
-    fn build_metadata(frame: &CanonicalFrame, representation: CandidateRepresentation) -> CandidateMetadata {
+    fn build_metadata(
+        frame: &CanonicalFrame,
+        representation: CandidateRepresentation,
+    ) -> CandidateMetadata {
         let safety_reason = match representation {
             CandidateRepresentation::FullFrame => SafetyReason::AlwaysSafe,
             CandidateRepresentation::ExactOpaqueBbox { .. } => SafetyReason::AlwaysSafe,
@@ -601,15 +614,26 @@ mod tests {
 
         // Frame 1 should have candidates (at minimum full frame and transparent sparse)
         let frame1_candidates: Vec<_> = candidates.iter().filter(|c| c.frame_index == 1).collect();
-        assert!(!frame1_candidates.is_empty(), "Frame 1 should have candidates");
+        assert!(
+            !frame1_candidates.is_empty(),
+            "Frame 1 should have candidates"
+        );
 
         // Since frame 1 has transparency, it won't have an opaque bbox candidate
         // But it should have a transparent sparse patch candidate
         let sparse_candidates: Vec<_> = frame1_candidates
             .iter()
-            .filter(|c| matches!(c.representation, CandidateRepresentation::TransparentSparsePatch { .. }))
+            .filter(|c| {
+                matches!(
+                    c.representation,
+                    CandidateRepresentation::TransparentSparsePatch { .. }
+                )
+            })
             .collect();
-        assert!(!sparse_candidates.is_empty(), "Frame 1 should have transparent sparse candidate");
+        assert!(
+            !sparse_candidates.is_empty(),
+            "Frame 1 should have transparent sparse candidate"
+        );
     }
 
     #[test]
@@ -645,10 +669,18 @@ mod tests {
         let frame1_candidates: Vec<_> = candidates.iter().filter(|c| c.frame_index == 1).collect();
         let sparse_candidates: Vec<_> = frame1_candidates
             .iter()
-            .filter(|c| matches!(c.representation, CandidateRepresentation::TransparentSparsePatch { .. }))
+            .filter(|c| {
+                matches!(
+                    c.representation,
+                    CandidateRepresentation::TransparentSparsePatch { .. }
+                )
+            })
             .collect();
 
-        assert!(!sparse_candidates.is_empty(), "Frame 1 should have transparent sparse candidate");
+        assert!(
+            !sparse_candidates.is_empty(),
+            "Frame 1 should have transparent sparse candidate"
+        );
     }
 
     #[test]
@@ -659,12 +691,19 @@ mod tests {
 
         // Every frame should have a full frame candidate
         for frame_idx in 0..seq.frames.len() {
-            let frame_candidates: Vec<_> = candidates.iter().filter(|c| c.frame_index == frame_idx).collect();
+            let frame_candidates: Vec<_> = candidates
+                .iter()
+                .filter(|c| c.frame_index == frame_idx)
+                .collect();
             let full_frame: Vec<_> = frame_candidates
                 .iter()
                 .filter(|c| c.representation == CandidateRepresentation::FullFrame)
                 .collect();
-            assert!(!full_frame.is_empty(), "Frame {} should have full frame candidate", frame_idx);
+            assert!(
+                !full_frame.is_empty(),
+                "Frame {} should have full frame candidate",
+                frame_idx
+            );
         }
     }
 
@@ -677,7 +716,9 @@ mod tests {
         assert!(!candidates.is_empty());
         for candidate in candidates {
             assert_eq!(candidate.metadata.disposal_method, DisposalMethod::Keep);
-            assert!(candidate.metadata.changed_ratio >= 0.0 && candidate.metadata.changed_ratio <= 1.0);
+            assert!(
+                candidate.metadata.changed_ratio >= 0.0 && candidate.metadata.changed_ratio <= 1.0
+            );
         }
     }
 }

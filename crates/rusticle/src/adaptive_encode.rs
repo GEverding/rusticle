@@ -193,7 +193,9 @@ impl Gif {
     }
 
     /// Internal: attempt the full adaptive encoding pipeline with tiered optimizer.
-    fn try_adaptive_encode_with_bytes(&self) -> Result<(Option<String>, Option<TieredOptimizerTelemetry>, Vec<u8>)> {
+    fn try_adaptive_encode_with_bytes(
+        &self,
+    ) -> Result<(Option<String>, Option<TieredOptimizerTelemetry>, Vec<u8>)> {
         // Step 1: Build canonical IR
         let canonical_seq = CanonicalSequenceBuilder::build(self)?;
 
@@ -202,7 +204,7 @@ impl Gif {
 
         // Step 3: Generate candidates for each frame
         let all_candidates_flat = CandidateGenerator::generate(&canonical_seq);
-        
+
         // Group candidates by frame index
         let mut all_candidates: Vec<Vec<_>> = vec![Vec::new(); canonical_seq.frames.len()];
         for candidate in all_candidates_flat {
@@ -221,12 +223,18 @@ impl Gif {
             for candidate in candidates {
                 let frame_idx = candidate.frame_index;
                 if let Some(frame) = canonical_seq.frames.get(frame_idx) {
-                    let score = crate::scoring::Scorer::score_candidate(candidate, frame, &canonical_seq, &profile);
+                    let score = crate::scoring::Scorer::score_candidate(
+                        candidate,
+                        frame,
+                        &canonical_seq,
+                        &profile,
+                    );
                     aggregate_score.byte_cost += score.byte_cost;
                     aggregate_score.visual_risk += score.visual_risk;
                     aggregate_score.lut_cost += score.lut_cost;
                     aggregate_score.temporal_instability += score.temporal_instability;
-                    aggregate_score.synthetic_transparency_risk += score.synthetic_transparency_risk;
+                    aggregate_score.synthetic_transparency_risk +=
+                        score.synthetic_transparency_risk;
                     aggregate_score.palette_coherence += score.palette_coherence;
                     aggregate_score.cpu_cost += score.cpu_cost;
                     score_count += 1;
@@ -253,11 +261,14 @@ impl Gif {
         let mut pruned_candidates = all_candidates.clone();
         if !tier0_decision.allows_early_exit() {
             for (frame_idx, candidates) in pruned_candidates.iter_mut().enumerate() {
-                let frame_disposal = canonical_seq.frames.get(frame_idx)
+                let frame_disposal = canonical_seq
+                    .frames
+                    .get(frame_idx)
                     .map(|f| f.dispose)
                     .unwrap_or(crate::types::DisposalMethod::Keep);
-                
-                let prune_results = Tier1Pruner::prune_frame(candidates, &policy_signals, frame_disposal);
+
+                let prune_results =
+                    Tier1Pruner::prune_frame(candidates, &policy_signals, frame_disposal);
                 *candidates = prune_results
                     .into_iter()
                     .filter_map(|r| r.candidate)
@@ -270,10 +281,10 @@ impl Gif {
         // Step 7: Tier-2 measurement (if needed)
         let mut tier2_measurement_ran = false;
         let mut tier2_frames_measured = 0;
-        
+
         if tier0_decision.requires_encode_and_measure() {
             let budget = MeasurementBudget::for_class(policy_signals.cpu_budget_class);
-            
+
             if budget.is_enabled() {
                 tier2_measurement_ran = true;
                 // Tier-2 measurement would be applied here to uncertain frames
@@ -292,7 +303,10 @@ impl Gif {
             &optimizer_config,
         );
 
-        let chunk_count = canonical_seq.frames.len().div_ceil(optimizer_config.chunk_size);
+        let chunk_count = canonical_seq
+            .frames
+            .len()
+            .div_ceil(optimizer_config.chunk_size);
 
         // Step 9: Determine palette strategies (used by SequenceOptimizer)
         let _palette_strategies = determine_palette_strategies(self, &canonical_seq, &profile);
@@ -356,7 +370,7 @@ impl Gif {
 
         // Step 3: Generate candidates for each frame
         let all_candidates_flat = CandidateGenerator::generate(&canonical_seq);
-        
+
         // Group candidates by frame index
         let mut all_candidates: Vec<Vec<_>> = vec![Vec::new(); canonical_seq.frames.len()];
         for candidate in all_candidates_flat {
@@ -375,12 +389,18 @@ impl Gif {
             for candidate in candidates {
                 let frame_idx = candidate.frame_index;
                 if let Some(frame) = canonical_seq.frames.get(frame_idx) {
-                    let score = crate::scoring::Scorer::score_candidate(candidate, frame, &canonical_seq, &profile);
+                    let score = crate::scoring::Scorer::score_candidate(
+                        candidate,
+                        frame,
+                        &canonical_seq,
+                        &profile,
+                    );
                     aggregate_score.byte_cost += score.byte_cost;
                     aggregate_score.visual_risk += score.visual_risk;
                     aggregate_score.lut_cost += score.lut_cost;
                     aggregate_score.temporal_instability += score.temporal_instability;
-                    aggregate_score.synthetic_transparency_risk += score.synthetic_transparency_risk;
+                    aggregate_score.synthetic_transparency_risk +=
+                        score.synthetic_transparency_risk;
                     aggregate_score.palette_coherence += score.palette_coherence;
                     aggregate_score.cpu_cost += score.cpu_cost;
                     score_count += 1;
@@ -407,11 +427,14 @@ impl Gif {
         let mut pruned_candidates = all_candidates.clone();
         if !tier0_decision.allows_early_exit() {
             for (frame_idx, candidates) in pruned_candidates.iter_mut().enumerate() {
-                let frame_disposal = canonical_seq.frames.get(frame_idx)
+                let frame_disposal = canonical_seq
+                    .frames
+                    .get(frame_idx)
                     .map(|f| f.dispose)
                     .unwrap_or(crate::types::DisposalMethod::Keep);
-                
-                let prune_results = Tier1Pruner::prune_frame(candidates, &policy_signals, frame_disposal);
+
+                let prune_results =
+                    Tier1Pruner::prune_frame(candidates, &policy_signals, frame_disposal);
                 *candidates = prune_results
                     .into_iter()
                     .filter_map(|r| r.candidate)
@@ -424,10 +447,10 @@ impl Gif {
         // Step 7: Tier-2 measurement (if needed)
         let mut tier2_measurement_ran = false;
         let tier2_frames_measured = 0;
-        
+
         if tier0_decision.requires_encode_and_measure() {
             let budget = MeasurementBudget::for_class(policy_signals.cpu_budget_class);
-            
+
             if budget.is_enabled() {
                 tier2_measurement_ran = true;
                 // Tier-2 measurement would be applied here to uncertain frames
@@ -445,7 +468,10 @@ impl Gif {
             &optimizer_config,
         );
 
-        let chunk_count = canonical_seq.frames.len().div_ceil(optimizer_config.chunk_size);
+        let chunk_count = canonical_seq
+            .frames
+            .len()
+            .div_ceil(optimizer_config.chunk_size);
 
         // Step 9: Build tiered optimizer telemetry
         let tiered_telemetry = TieredOptimizerTelemetry {
@@ -477,7 +503,13 @@ impl Gif {
         palette_realization: &crate::palette_realize::PaletteRealization,
     ) -> Result<Vec<u8>> {
         let mut buffer = Vec::new();
-        Self::encode_adaptive_frames_to(&mut buffer, width, height, loop_count, palette_realization)?;
+        Self::encode_adaptive_frames_to(
+            &mut buffer,
+            width,
+            height,
+            loop_count,
+            palette_realization,
+        )?;
         Ok(buffer)
     }
 
@@ -490,24 +522,28 @@ impl Gif {
         palette_realization: &crate::palette_realize::PaletteRealization,
     ) -> Result<()> {
         // Check if we have any valid frames (non-zero dimensions)
-        let has_valid_frames = palette_realization.frames.iter().any(|f| f.width > 0 && f.height > 0);
+        let has_valid_frames = palette_realization
+            .frames
+            .iter()
+            .any(|f| f.width > 0 && f.height > 0);
         if !has_valid_frames {
             return Err(crate::error::Error::EncodeError(
-                "no valid frames to encode (all frames are 0x0)".to_string()
+                "no valid frames to encode (all frames are 0x0)".to_string(),
             ));
         }
 
-        let mut encoder = gif::Encoder::new(writer, width, height, &[])
-            .map_err(|e| crate::error::Error::EncodeError(format!("failed to create encoder: {}", e)))?;
+        let mut encoder = gif::Encoder::new(writer, width, height, &[]).map_err(|e| {
+            crate::error::Error::EncodeError(format!("failed to create encoder: {}", e))
+        })?;
 
         // Set loop count
         let repeat = match loop_count {
             crate::types::LoopCount::Infinite => gif::Repeat::Infinite,
             crate::types::LoopCount::Finite(n) => gif::Repeat::Finite(n),
         };
-        encoder
-            .set_repeat(repeat)
-            .map_err(|e| crate::error::Error::EncodeError(format!("failed to set repeat: {}", e)))?;
+        encoder.set_repeat(repeat).map_err(|e| {
+            crate::error::Error::EncodeError(format!("failed to set repeat: {}", e))
+        })?;
 
         // Write each quantized frame
         for qframe in &palette_realization.frames {
@@ -548,9 +584,9 @@ impl Gif {
             gif_frame.left = qframe.left;
             gif_frame.top = qframe.top;
 
-            encoder
-                .write_frame(&gif_frame)
-                .map_err(|e| crate::error::Error::EncodeError(format!("failed to write frame: {}", e)))?;
+            encoder.write_frame(&gif_frame).map_err(|e| {
+                crate::error::Error::EncodeError(format!("failed to write frame: {}", e))
+            })?;
         }
 
         Ok(())
@@ -566,7 +602,10 @@ impl Gif {
         use std::fmt::Write as FmtWrite;
 
         let mut json = String::new();
-        let _ = writeln!(json, r#"{{"mode":"adaptive","status":"success","tiered_optimizer":{{"#);
+        let _ = writeln!(
+            json,
+            r#"{{"mode":"adaptive","status":"success","tiered_optimizer":{{"#
+        );
         let _ = writeln!(
             json,
             r#"  "tier0_decision":"{}","#,
@@ -600,13 +639,17 @@ impl Gif {
         let _ = writeln!(
             json,
             r#"  "sequence_optimizer_summary":"{}"#,
-            tiered_telemetry.sequence_optimizer_summary.replace('"', "\\\"")
+            tiered_telemetry
+                .sequence_optimizer_summary
+                .replace('"', "\\\"")
         );
         let _ = writeln!(json, r#"}},"sequence":{{"#);
         let _ = writeln!(
             json,
             r#"  "width":{},"height":{},"frame_count":{},"#,
-            canonical_seq.width, canonical_seq.height, canonical_seq.frames.len()
+            canonical_seq.width,
+            canonical_seq.height,
+            canonical_seq.frames.len()
         );
         let _ = writeln!(
             json,
@@ -664,11 +707,16 @@ impl Gif {
         use std::fmt::Write as FmtWrite;
 
         let mut json = String::new();
-        let _ = writeln!(json, r#"{{"mode":"adaptive","status":"success","sequence":{{"#);
+        let _ = writeln!(
+            json,
+            r#"{{"mode":"adaptive","status":"success","sequence":{{"#
+        );
         let _ = writeln!(
             json,
             r#"  "width":{},"height":{},"frame_count":{},"#,
-            canonical_seq.width, canonical_seq.height, canonical_seq.frames.len()
+            canonical_seq.width,
+            canonical_seq.height,
+            canonical_seq.frames.len()
         );
         let _ = writeln!(
             json,
@@ -720,7 +768,9 @@ impl Gif {
         match repr {
             crate::candidate_gen::CandidateRepresentation::FullFrame => "full-frame",
             crate::candidate_gen::CandidateRepresentation::ExactOpaqueBbox { .. } => "opaque-bbox",
-            crate::candidate_gen::CandidateRepresentation::TransparentSparsePatch { .. } => "sparse-patch",
+            crate::candidate_gen::CandidateRepresentation::TransparentSparsePatch { .. } => {
+                "sparse-patch"
+            }
             crate::candidate_gen::CandidateRepresentation::MinimalNoOp => "minimal-noop",
         }
     }
@@ -734,7 +784,9 @@ impl Gif {
             crate::scoring::DecisionReason::LowestScore => "lowest-score",
             crate::scoring::DecisionReason::TaxonomyPreferred => "taxonomy-preferred",
             crate::scoring::DecisionReason::SafetyConstraint => "safety-constraint",
-            crate::scoring::DecisionReason::PaletteStrategyAlignment => "palette-strategy-alignment",
+            crate::scoring::DecisionReason::PaletteStrategyAlignment => {
+                "palette-strategy-alignment"
+            }
             crate::scoring::DecisionReason::TieBreaker => "tie-breaker",
             crate::scoring::DecisionReason::Fallback => "fallback",
         }
@@ -756,17 +808,17 @@ mod tests {
         // Frame 1: solid red
         let mut frame1_pixels = vec![0u8; (width as usize) * (height as usize) * 4];
         for i in (0..frame1_pixels.len()).step_by(4) {
-            frame1_pixels[i] = 255;     // R
-            frame1_pixels[i + 1] = 0;   // G
-            frame1_pixels[i + 2] = 0;   // B
+            frame1_pixels[i] = 255; // R
+            frame1_pixels[i + 1] = 0; // G
+            frame1_pixels[i + 2] = 0; // B
             frame1_pixels[i + 3] = 255; // A
         }
 
         // Frame 2: solid blue
         let mut frame2_pixels = vec![0u8; (width as usize) * (height as usize) * 4];
         for i in (0..frame2_pixels.len()).step_by(4) {
-            frame2_pixels[i] = 0;       // R
-            frame2_pixels[i + 1] = 0;   // G
+            frame2_pixels[i] = 0; // R
+            frame2_pixels[i + 1] = 0; // G
             frame2_pixels[i + 2] = 255; // B
             frame2_pixels[i + 3] = 255; // A
         }
@@ -826,14 +878,29 @@ mod tests {
 
         let (decision, bytes) = result.unwrap();
         assert!(decision.success, "adaptive decision should succeed");
-        assert!(decision.tiered_telemetry.is_some(), "tiered telemetry should be present");
+        assert!(
+            decision.tiered_telemetry.is_some(),
+            "tiered telemetry should be present"
+        );
         assert!(!bytes.is_empty(), "encoded bytes should not be empty");
 
         let telemetry = decision.tiered_telemetry.unwrap();
-        assert!(!telemetry.tier0_decision.is_empty(), "tier0 decision should be set");
-        assert!(telemetry.candidates_before_pruning > 0, "should have candidates before pruning");
-        assert!(telemetry.candidates_after_pruning > 0, "should have candidates after pruning");
-        assert!(telemetry.candidates_after_pruning <= telemetry.candidates_before_pruning, "pruning should reduce candidates");
+        assert!(
+            !telemetry.tier0_decision.is_empty(),
+            "tier0 decision should be set"
+        );
+        assert!(
+            telemetry.candidates_before_pruning > 0,
+            "should have candidates before pruning"
+        );
+        assert!(
+            telemetry.candidates_after_pruning > 0,
+            "should have candidates after pruning"
+        );
+        assert!(
+            telemetry.candidates_after_pruning <= telemetry.candidates_before_pruning,
+            "pruning should reduce candidates"
+        );
     }
 
     #[test]
@@ -849,15 +916,17 @@ mod tests {
 
         let (decision, bytes) = result.unwrap();
         assert!(decision.success);
-        
+
         // For opaque delta GIFs, Tier-0 should classify as early-exit-structural
         let telemetry = decision.tiered_telemetry.unwrap();
         // Note: actual classification depends on profile, but we verify the path works
-        assert!(telemetry.tier0_decision == "early-exit-structural" || 
-                telemetry.tier0_decision == "needs-tier1" ||
-                telemetry.tier0_decision == "needs-tier2",
-                "tier0 decision should be one of the valid states");
-        
+        assert!(
+            telemetry.tier0_decision == "early-exit-structural"
+                || telemetry.tier0_decision == "needs-tier1"
+                || telemetry.tier0_decision == "needs-tier2",
+            "tier0 decision should be one of the valid states"
+        );
+
         // Verify bytes were emitted
         assert!(!bytes.is_empty(), "should emit bytes even with early-exit");
     }
@@ -875,7 +944,10 @@ mod tests {
 
         let (decision, bytes) = result.unwrap();
         assert!(!decision.success, "disabled adaptive should not succeed");
-        assert!(decision.fallback_reason.is_some(), "should have fallback reason");
+        assert!(
+            decision.fallback_reason.is_some(),
+            "should have fallback reason"
+        );
         assert!(!bytes.is_empty(), "should still emit bytes via fallback");
     }
 
@@ -894,8 +966,14 @@ mod tests {
         let telemetry = decision.tiered_telemetry.unwrap();
 
         // Verify sequence optimizer telemetry is present
-        assert!(telemetry.sequence_optimizer_chunks > 0, "should have chunk count");
-        assert!(!telemetry.sequence_optimizer_summary.is_empty(), "should have DP-lite summary");
+        assert!(
+            telemetry.sequence_optimizer_chunks > 0,
+            "should have chunk count"
+        );
+        assert!(
+            !telemetry.sequence_optimizer_summary.is_empty(),
+            "should have DP-lite summary"
+        );
     }
 
     #[test]
@@ -910,13 +988,28 @@ mod tests {
         assert!(result.is_ok());
 
         let (decision, _) = result.unwrap();
-        assert!(decision.telemetry_json.is_some(), "should have telemetry JSON");
+        assert!(
+            decision.telemetry_json.is_some(),
+            "should have telemetry JSON"
+        );
 
         let json = decision.telemetry_json.unwrap();
-        assert!(json.contains("tiered_optimizer"), "JSON should include tiered_optimizer section");
-        assert!(json.contains("tier0_decision"), "JSON should include tier0_decision");
-        assert!(json.contains("candidates_before_pruning"), "JSON should include candidate counts");
-        assert!(json.contains("sequence_optimizer_chunks"), "JSON should include chunk count");
+        assert!(
+            json.contains("tiered_optimizer"),
+            "JSON should include tiered_optimizer section"
+        );
+        assert!(
+            json.contains("tier0_decision"),
+            "JSON should include tier0_decision"
+        );
+        assert!(
+            json.contains("candidates_before_pruning"),
+            "JSON should include candidate counts"
+        );
+        assert!(
+            json.contains("sequence_optimizer_chunks"),
+            "JSON should include chunk count"
+        );
     }
 
     #[test]
@@ -936,4 +1029,3 @@ mod tests {
         assert!(!bytes.is_empty(), "should emit bytes even on fallback");
     }
 }
-

@@ -22,9 +22,9 @@ fn create_test_gif(width: u16, height: u16, frame_count: usize) -> Gif {
     for i in 0..frame_count {
         let mut pixels = vec![0u8; (width as usize) * (height as usize) * 4];
         let color = [
-            (255, 0, 0, 255),     // Red
-            (0, 255, 0, 255),     // Green
-            (0, 0, 255, 255),     // Blue
+            (255, 0, 0, 255), // Red
+            (0, 255, 0, 255), // Green
+            (0, 0, 255, 255), // Blue
         ][i % 3];
 
         for chunk in pixels.chunks_exact_mut(4) {
@@ -76,7 +76,10 @@ fn test_adaptive_fallback_materialization_failure_triggers_fallback() {
     let result = preparer.prepare_with_fallback(&gif);
 
     // Should trigger fallback
-    assert!(result.is_err(), "Should trigger fallback on materialization failure");
+    assert!(
+        result.is_err(),
+        "Should trigger fallback on materialization failure"
+    );
     let (reason, telemetry) = result.unwrap_err();
 
     // Verify fallback telemetry
@@ -124,8 +127,14 @@ fn test_adaptive_fallback_telemetry_json_format() {
 
     // Verify JSON format
     let json = telemetry.to_json();
-    assert!(json.contains("adaptive_fallback"), "JSON should contain adaptive_fallback");
-    assert!(json.contains("fallback_used"), "JSON should contain fallback_used");
+    assert!(
+        json.contains("adaptive_fallback"),
+        "JSON should contain adaptive_fallback"
+    );
+    assert!(
+        json.contains("fallback_used"),
+        "JSON should contain fallback_used"
+    );
     assert!(json.contains("true"), "fallback_used should be true");
     assert!(
         json.contains("materialization"),
@@ -176,10 +185,7 @@ fn test_adaptive_fallback_success_path_no_fallback() {
 
     // Verify success telemetry
     assert!(!telemetry.fallback_used, "Fallback should not be used");
-    assert_eq!(
-        telemetry.failed_stage, None,
-        "No stage should have failed"
-    );
+    assert_eq!(telemetry.failed_stage, None, "No stage should have failed");
     assert_eq!(
         telemetry.frames_processed, 2,
         "Should have processed 2 frames"
@@ -269,7 +275,10 @@ fn test_adaptive_fallback_multiple_frames_success() {
     assert!(result.is_ok());
     let (realization, telemetry) = result.unwrap();
     assert_eq!(realization.frames.len(), 5, "Should have 5 frames");
-    assert_eq!(telemetry.frames_processed, 5, "Should have processed 5 frames");
+    assert_eq!(
+        telemetry.frames_processed, 5,
+        "Should have processed 5 frames"
+    );
 }
 
 #[test]
@@ -288,7 +297,10 @@ fn test_adaptive_fallback_reason_codes_are_valid() {
         FallbackReason::Unknown.code(),
     ];
     assert_eq!(codes.len(), 4);
-    assert_eq!(codes.iter().collect::<std::collections::HashSet<_>>().len(), 4);
+    assert_eq!(
+        codes.iter().collect::<std::collections::HashSet<_>>().len(),
+        4
+    );
 }
 
 #[test]
@@ -305,5 +317,8 @@ fn test_adaptive_fallback_stage_names_are_valid() {
         AdaptiveStage::PreEncodePrep.name(),
     ];
     assert_eq!(names.len(), 3);
-    assert_eq!(names.iter().collect::<std::collections::HashSet<_>>().len(), 3);
+    assert_eq!(
+        names.iter().collect::<std::collections::HashSet<_>>().len(),
+        3
+    );
 }

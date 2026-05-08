@@ -128,10 +128,7 @@ impl AdaptiveHarnessReport {
 
         // Executive Summary
         md.push_str("## Executive Summary\n");
-        md.push_str(&format!(
-            "- **Total Files:** {}\n",
-            self.total_files
-        ));
+        md.push_str(&format!("- **Total Files:** {}\n", self.total_files));
         md.push_str(&format!(
             "- **Successful Adaptive Runs:** {} ({:.1}%)\n",
             self.successful_files,
@@ -202,10 +199,7 @@ impl AdaptiveHarnessReport {
                 "- **Files:** {} (Success: {}, Fallback: {})\n",
                 cat_result.file_count, cat_result.success_count, cat_result.fallback_count
             ));
-            md.push_str(&format!(
-                "- **Avg Score:** {:.3}\n",
-                cat_result.avg_score
-            ));
+            md.push_str(&format!("- **Avg Score:** {:.3}\n", cat_result.avg_score));
             md.push_str(&format!(
                 "- **Avg Estimated Bytes:** {}\n",
                 cat_result.avg_estimated_bytes
@@ -297,10 +291,7 @@ pub fn run_harness(
                         .and_then(|s| s.to_str())
                         .map(|s| {
                             // Extract category from filename (e.g., "cartoon_01" -> "cartoon")
-                            s.split('_')
-                                .next()
-                                .unwrap_or("unknown")
-                                .to_string()
+                            s.split('_').next().unwrap_or("unknown").to_string()
                         })
                         .unwrap_or_else(|| "unknown".to_string());
 

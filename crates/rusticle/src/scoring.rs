@@ -40,8 +40,8 @@
 use crate::adaptive_ir::{CanonicalFrame, CanonicalSequence};
 use crate::candidate_gen::{Candidate, CandidateMetadata, CandidateRepresentation, SafetyReason};
 use crate::lut_policy::{candidate_to_family, CandidateFamily};
-use crate::profiler::{GifProfile, SequenceTaxonomy};
 use crate::palette_strategy::{PaletteStrategy, PaletteStrategySet};
+use crate::profiler::{GifProfile, SequenceTaxonomy};
 use crate::types::DisposalMethod;
 
 /// Score breakdown for a candidate representation.
@@ -210,7 +210,8 @@ impl Scorer {
         score.lut_cost = Self::estimate_lut_cost(candidate, profile);
 
         // Compute temporal_instability
-        score.temporal_instability = Self::estimate_temporal_instability(candidate, frame, seq, profile);
+        score.temporal_instability =
+            Self::estimate_temporal_instability(candidate, frame, seq, profile);
 
         // Compute synthetic_transparency_risk
         score.synthetic_transparency_risk =
@@ -299,7 +300,11 @@ impl Scorer {
     /// - Opaque bbox: medium cost (bbox area + overhead).
     /// - Transparent sparse: low cost (sparse pixels) but risky.
     /// - Minimal/no-op: very low cost (minimal data).
-    fn estimate_byte_cost(candidate: &Candidate, _frame: &CanonicalFrame, seq: &CanonicalSequence) -> f32 {
+    fn estimate_byte_cost(
+        candidate: &Candidate,
+        _frame: &CanonicalFrame,
+        seq: &CanonicalSequence,
+    ) -> f32 {
         let canvas_area = (seq.width as usize) * (seq.height as usize);
 
         match &candidate.representation {
@@ -369,7 +374,7 @@ impl Scorer {
                 // Minimal/no-op: risky if disposal is Background
                 match frame.dispose {
                     DisposalMethod::Background => 0.7, // Very risky: clears region
-                    _ => 0.1,                           // Low risk: safe disposal
+                    _ => 0.1,                          // Low risk: safe disposal
                 }
             }
         }
@@ -391,10 +396,10 @@ impl Scorer {
 
         // Adjust based on candidate type
         let candidate_factor = match &candidate.representation {
-            CandidateRepresentation::FullFrame => 0.3,      // Full frame: some instability
+            CandidateRepresentation::FullFrame => 0.3, // Full frame: some instability
             CandidateRepresentation::ExactOpaqueBbox { .. } => 0.2, // Opaque bbox: lower instability
             CandidateRepresentation::TransparentSparsePatch { .. } => 0.5, // Sparse: higher instability
-            CandidateRepresentation::MinimalNoOp => 0.1,    // No-op: very stable
+            CandidateRepresentation::MinimalNoOp => 0.1,                   // No-op: very stable
         };
 
         // Adjust based on changed area (sparse changes = lower instability)
@@ -448,7 +453,8 @@ impl Scorer {
     /// - Sparse patch: cheap (sparse processing).
     /// - Minimal/no-op: very cheap.
     fn estimate_cpu_cost(candidate: &Candidate, frame: &CanonicalFrame) -> f32 {
-        let canvas_area = (frame.source_patch.width as usize) * (frame.source_patch.height as usize);
+        let canvas_area =
+            (frame.source_patch.width as usize) * (frame.source_patch.height as usize);
 
         match &candidate.representation {
             CandidateRepresentation::FullFrame => {
@@ -578,18 +584,10 @@ impl Chooser {
         let mut total_score = 0.0;
 
         for (frame_idx, frame) in seq.frames.iter().enumerate() {
-            let candidates = all_candidates
-                .get(frame_idx)
-                .cloned()
-                .unwrap_or_default();
+            let candidates = all_candidates.get(frame_idx).cloned().unwrap_or_default();
 
-            let decision = Self::choose_frame_candidate(
-                &candidates,
-                frame,
-                seq,
-                profile,
-                palette_strategies,
-            );
+            let decision =
+                Self::choose_frame_candidate(&candidates, frame, seq, profile, palette_strategies);
 
             total_score += decision.score_breakdown.total_score;
             frame_decisions.push(decision);
@@ -680,7 +678,8 @@ impl Chooser {
                 // Prefer full frame or opaque bbox (respect disposal)
                 matches!(
                     repr,
-                    CandidateRepresentation::FullFrame | CandidateRepresentation::ExactOpaqueBbox { .. }
+                    CandidateRepresentation::FullFrame
+                        | CandidateRepresentation::ExactOpaqueBbox { .. }
                 )
             }
             SequenceTaxonomy::Photographic => {
@@ -881,7 +880,8 @@ mod tests {
         let gif = create_test_gif_opaque_delta();
         let seq = crate::adaptive_ir::CanonicalSequenceBuilder::build(&gif).unwrap();
         let profile = profile_canonical_sequence(&seq).unwrap();
-        let palette_strategies = crate::palette_strategy::determine_palette_strategies(&gif, &seq, &profile);
+        let palette_strategies =
+            crate::palette_strategy::determine_palette_strategies(&gif, &seq, &profile);
 
         let candidates = CandidateGenerator::generate(&seq);
 
@@ -915,7 +915,8 @@ mod tests {
         let gif = create_test_gif_transparency_heavy();
         let seq = crate::adaptive_ir::CanonicalSequenceBuilder::build(&gif).unwrap();
         let profile = profile_canonical_sequence(&seq).unwrap();
-        let palette_strategies = crate::palette_strategy::determine_palette_strategies(&gif, &seq, &profile);
+        let palette_strategies =
+            crate::palette_strategy::determine_palette_strategies(&gif, &seq, &profile);
 
         let candidates = CandidateGenerator::generate(&seq);
 
@@ -944,7 +945,8 @@ mod tests {
         let gif = create_test_gif_opaque_delta();
         let seq = crate::adaptive_ir::CanonicalSequenceBuilder::build(&gif).unwrap();
         let profile = profile_canonical_sequence(&seq).unwrap();
-        let palette_strategies = crate::palette_strategy::determine_palette_strategies(&gif, &seq, &profile);
+        let palette_strategies =
+            crate::palette_strategy::determine_palette_strategies(&gif, &seq, &profile);
 
         let candidates = CandidateGenerator::generate(&seq);
 
@@ -972,8 +974,14 @@ mod tests {
         );
 
         assert_eq!(decision1.chosen_candidate, decision2.chosen_candidate);
-        assert_eq!(decision1.chosen_palette_strategy, decision2.chosen_palette_strategy);
-        assert!((decision1.score_breakdown.total_score - decision2.score_breakdown.total_score).abs() < 0.001);
+        assert_eq!(
+            decision1.chosen_palette_strategy,
+            decision2.chosen_palette_strategy
+        );
+        assert!(
+            (decision1.score_breakdown.total_score - decision2.score_breakdown.total_score).abs()
+                < 0.001
+        );
     }
 
     #[test]
@@ -981,7 +989,8 @@ mod tests {
         let gif = create_test_gif_opaque_delta();
         let seq = crate::adaptive_ir::CanonicalSequenceBuilder::build(&gif).unwrap();
         let profile = profile_canonical_sequence(&seq).unwrap();
-        let palette_strategies = crate::palette_strategy::determine_palette_strategies(&gif, &seq, &profile);
+        let palette_strategies =
+            crate::palette_strategy::determine_palette_strategies(&gif, &seq, &profile);
 
         let candidates = CandidateGenerator::generate(&seq);
 
@@ -991,7 +1000,8 @@ mod tests {
             frame_candidates[candidate.frame_index].push(candidate);
         }
 
-        let decision = Chooser::choose_sequence(&frame_candidates, &seq, &profile, &palette_strategies);
+        let decision =
+            Chooser::choose_sequence(&frame_candidates, &seq, &profile, &palette_strategies);
 
         assert_eq!(decision.frame_decisions.len(), seq.frames.len());
         assert!(decision.avg_score >= 0.0 && decision.avg_score <= 1.0);
@@ -1094,7 +1104,10 @@ mod tests {
 
         // For transparency-heavy sequences, sparse patch should have reasonable score
         // (not excessively penalized)
-        assert!(score.total_score < 0.8, "Sparse patch in transparency-heavy sequence should score reasonably");
+        assert!(
+            score.total_score < 0.8,
+            "Sparse patch in transparency-heavy sequence should score reasonably"
+        );
 
         // Verify that synthetic_transparency_risk is not excessive
         assert!(score.synthetic_transparency_risk < 0.7);
@@ -1110,14 +1123,17 @@ mod tests {
         let candidates = CandidateGenerator::generate(&seq);
         let frame_candidates: Vec<Vec<Candidate>> = vec![candidates];
 
-        let score = Scorer::score_candidate(&frame_candidates[0][0], &seq.frames[0], &seq, &profile);
+        let score =
+            Scorer::score_candidate(&frame_candidates[0][0], &seq.frames[0], &seq, &profile);
 
         // Verify all dimensions are present and in valid range
         assert!(score.byte_cost >= 0.0 && score.byte_cost <= 1.0);
         assert!(score.visual_risk >= 0.0 && score.visual_risk <= 1.0);
         assert!(score.lut_cost >= 0.0 && score.lut_cost <= 1.0);
         assert!(score.temporal_instability >= 0.0 && score.temporal_instability <= 1.0);
-        assert!(score.synthetic_transparency_risk >= 0.0 && score.synthetic_transparency_risk <= 1.0);
+        assert!(
+            score.synthetic_transparency_risk >= 0.0 && score.synthetic_transparency_risk <= 1.0
+        );
         assert!(score.palette_coherence >= 0.0 && score.palette_coherence <= 1.0);
         assert!(score.cpu_cost >= 0.0 && score.cpu_cost <= 1.0);
         assert!(score.total_score >= 0.0 && score.total_score <= 1.0);
@@ -1173,7 +1189,10 @@ mod tests {
         let score = Scorer::score_candidate(&opaque_bbox, &seq.frames[0], &seq, &profile);
 
         // For opaque-delta sequences, opaque bbox should have very low LUT cost
-        assert!(score.lut_cost < 0.15, "Opaque bbox in opaque-delta should have low LUT cost");
+        assert!(
+            score.lut_cost < 0.15,
+            "Opaque bbox in opaque-delta should have low LUT cost"
+        );
     }
 
     #[test]
@@ -1206,6 +1225,9 @@ mod tests {
         let score = Scorer::score_candidate(&sparse_patch, &seq.frames[0], &seq, &profile);
 
         // For transparency-heavy sequences, sparse patch should have high LUT cost
-        assert!(score.lut_cost > 0.5, "Sparse patch in transparency-heavy should have high LUT cost");
+        assert!(
+            score.lut_cost > 0.5,
+            "Sparse patch in transparency-heavy should have high LUT cost"
+        );
     }
 }

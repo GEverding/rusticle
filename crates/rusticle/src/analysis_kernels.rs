@@ -8,7 +8,10 @@
 //! - **Changed-pixel mask**: Identify which pixels differ between two canvases.
 //! - **Transparency stats**: Count transparent pixels and accumulate color statistics.
 
-use std::simd::{cmp::{SimdOrd, SimdPartialOrd}, u8x16, Mask};
+use std::simd::{
+    cmp::{SimdOrd, SimdPartialOrd},
+    u8x16, Mask,
+};
 
 /// Result of changed-pixel mask analysis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,11 +62,7 @@ pub struct ColorDistanceStats {
 /// # Panics
 /// Panics if `prev.len() != curr.len()` or buffer length is not a multiple of 4.
 #[must_use]
-pub fn analyze_changed_pixels_simd(
-    prev: &[u8],
-    curr: &[u8],
-    threshold: u8,
-) -> ChangedPixelStats {
+pub fn analyze_changed_pixels_simd(prev: &[u8], curr: &[u8], threshold: u8) -> ChangedPixelStats {
     assert_eq!(prev.len(), curr.len());
     assert!(
         prev.len().is_multiple_of(4),
@@ -149,11 +148,7 @@ pub fn analyze_changed_pixels_simd(
 
 /// Scalar fallback for [`analyze_changed_pixels_simd`].
 #[inline]
-pub fn analyze_changed_pixels_scalar(
-    prev: &[u8],
-    curr: &[u8],
-    threshold: u8,
-) -> ChangedPixelStats {
+pub fn analyze_changed_pixels_scalar(prev: &[u8], curr: &[u8], threshold: u8) -> ChangedPixelStats {
     assert_eq!(prev.len(), curr.len());
 
     let mut changed_count = 0usize;
@@ -461,7 +456,10 @@ mod tests {
         let scalar_stats = analyze_changed_pixels_scalar(&prev, &curr, 5);
 
         assert_eq!(simd_stats.changed_count, scalar_stats.changed_count);
-        assert_eq!(simd_stats.became_transparent, scalar_stats.became_transparent);
+        assert_eq!(
+            simd_stats.became_transparent,
+            scalar_stats.became_transparent
+        );
         assert_eq!(simd_stats.became_opaque, scalar_stats.became_opaque);
     }
 
@@ -487,8 +485,8 @@ mod tests {
     fn test_transparency_mixed() {
         let pixels = vec![
             100u8, 100, 100, 255, // opaque
-            50, 50, 50, 0,         // transparent
-            75, 75, 75, 128,       // semi-transparent
+            50, 50, 50, 0, // transparent
+            75, 75, 75, 128, // semi-transparent
         ];
         let stats = analyze_transparency_simd(&pixels);
         assert_eq!(stats.opaque_count, 1);
@@ -597,7 +595,10 @@ mod tests {
 
         // Verify correctness
         assert_eq!(simd_stats.changed_count, scalar_stats.changed_count);
-        assert_eq!(simd_stats.became_transparent, scalar_stats.became_transparent);
+        assert_eq!(
+            simd_stats.became_transparent,
+            scalar_stats.became_transparent
+        );
         assert_eq!(simd_stats.became_opaque, scalar_stats.became_opaque);
 
         // Report timing (not a hard assertion, just informational)

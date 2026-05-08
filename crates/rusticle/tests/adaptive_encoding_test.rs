@@ -52,7 +52,7 @@ fn test_adaptive_mode_enabled_produces_telemetry_or_fallback() {
     assert_eq!(decoded.width, 100);
     assert_eq!(decoded.height, 100);
     assert_eq!(decoded.frames.len(), 3);
-    
+
     // If adaptive succeeded, should have telemetry
     if decision.success {
         assert!(decision.telemetry_json.is_some());
@@ -174,7 +174,7 @@ fn test_adaptive_emits_real_bytes_or_falls_back() {
     assert_eq!(decoded.width, 100);
     assert_eq!(decoded.height, 100);
     assert_eq!(decoded.frames.len(), 3);
-    
+
     // If adaptive succeeded, should have telemetry
     if decision.success {
         assert!(decision.telemetry_json.is_some());
@@ -243,8 +243,13 @@ fn test_adaptive_telemetry_includes_decision_reasons() {
             "fallback",
         ];
 
-        let has_valid_reason = valid_reasons.iter().any(|r| telemetry.contains(&format!("\"reason\":\"{}\"", r)));
-        assert!(has_valid_reason, "Telemetry should contain a valid reason code");
+        let has_valid_reason = valid_reasons
+            .iter()
+            .any(|r| telemetry.contains(&format!("\"reason\":\"{}\"", r)));
+        assert!(
+            has_valid_reason,
+            "Telemetry should contain a valid reason code"
+        );
     }
 }
 
@@ -302,12 +307,7 @@ fn test_adaptive_telemetry_includes_chosen_representation() {
         assert!(telemetry.contains("\"chosen_representation\""));
 
         // Representation should be one of the valid values
-        let valid_reprs = [
-            "full-frame",
-            "opaque-bbox",
-            "sparse-patch",
-            "minimal-noop",
-        ];
+        let valid_reprs = ["full-frame", "opaque-bbox", "sparse-patch", "minimal-noop"];
 
         let has_valid_repr = valid_reprs
             .iter()

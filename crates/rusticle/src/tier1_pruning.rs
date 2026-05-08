@@ -187,7 +187,10 @@ impl Tier1Pruner {
         // Rule 1: If ExactOpaqueBbox with bbox_ratio < 0.3 exists, prune FullFrame
         let has_small_opaque_bbox = results.iter().any(|r| {
             if let Some(c) = &r.candidate {
-                if matches!(c.representation, CandidateRepresentation::ExactOpaqueBbox { .. }) {
+                if matches!(
+                    c.representation,
+                    CandidateRepresentation::ExactOpaqueBbox { .. }
+                ) {
                     return c.metadata.changed_ratio < 0.3;
                 }
             }
@@ -234,29 +237,31 @@ impl Tier1Pruner {
 
         // Rule 3: If TransparentSparsePatch is risky and a non-risky alternative exists
         // with bbox_ratio < 2x, prune the risky one
-        let risky_sparse_bbox_ratio = results
-            .iter()
-            .find_map(|r| {
-                if let Some(c) = &r.candidate {
-                    if let CandidateRepresentation::TransparentSparsePatch { is_risky: true, .. } =
-                        c.representation
-                    {
-                        return Some(c.metadata.changed_ratio);
-                    }
+        let risky_sparse_bbox_ratio = results.iter().find_map(|r| {
+            if let Some(c) = &r.candidate {
+                if let CandidateRepresentation::TransparentSparsePatch { is_risky: true, .. } =
+                    c.representation
+                {
+                    return Some(c.metadata.changed_ratio);
                 }
-                None
-            });
+            }
+            None
+        });
 
         if let Some(risky_ratio) = risky_sparse_bbox_ratio {
             let has_safer_alternative = results.iter().any(|r| {
                 if let Some(c) = &r.candidate {
-                    if let CandidateRepresentation::TransparentSparsePatch { is_risky: false, .. } =
-                        c.representation
+                    if let CandidateRepresentation::TransparentSparsePatch {
+                        is_risky: false, ..
+                    } = c.representation
                     {
                         return c.metadata.changed_ratio < risky_ratio * 2.0;
                     }
                     // Also consider non-sparse alternatives
-                    if !matches!(c.representation, CandidateRepresentation::TransparentSparsePatch { .. }) {
+                    if !matches!(
+                        c.representation,
+                        CandidateRepresentation::TransparentSparsePatch { .. }
+                    ) {
                         return c.metadata.changed_ratio < risky_ratio * 2.0;
                     }
                 }
@@ -267,8 +272,10 @@ impl Tier1Pruner {
                 for r in results.iter_mut() {
                     if r.candidate.is_some() && r.reason == PruneReason::RetainedForMeasurement {
                         if let Some(c) = &r.candidate {
-                            if let CandidateRepresentation::TransparentSparsePatch { is_risky: true, .. } =
-                                c.representation
+                            if let CandidateRepresentation::TransparentSparsePatch {
+                                is_risky: true,
+                                ..
+                            } = c.representation
                             {
                                 r.candidate = None;
                                 r.reason = PruneReason::PrunedByStructuralDominance;
@@ -319,7 +326,9 @@ impl Tier1Pruner {
                 if r.candidate.is_some() && r.reason == PruneReason::RetainedForMeasurement {
                     if let Some(c) = &r.candidate {
                         let family = candidate_to_family(&c.representation);
-                        if family.is_lut_breaking() && c.metadata.changed_ratio > cheap_bbox_ratio * 1.5 {
+                        if family.is_lut_breaking()
+                            && c.metadata.changed_ratio > cheap_bbox_ratio * 1.5
+                        {
                             r.candidate = None;
                             r.reason = PruneReason::PrunedByPaletteChurnRisk;
                         }
@@ -378,17 +387,14 @@ impl Tier1Pruner {
                 })
                 .or_else(|| {
                     // Fallback: find FullFrame
-                    results
-                        .iter()
-                        .enumerate()
-                        .find_map(|(idx, r)| {
-                            if let Some(orig) = &r.original {
-                                if matches!(orig.representation, CandidateRepresentation::FullFrame) {
-                                    return Some(idx);
-                                }
+                    results.iter().enumerate().find_map(|(idx, r)| {
+                        if let Some(orig) = &r.original {
+                            if matches!(orig.representation, CandidateRepresentation::FullFrame) {
+                                return Some(idx);
                             }
-                            None
-                        })
+                        }
+                        None
+                    })
                 })
                 .unwrap_or(0);
 
@@ -451,7 +457,12 @@ mod tests {
     fn test_opaque_delta_prunes_to_small_set() {
         // Voyager-like: opaque deltas with 4 candidate types
         let candidates = vec![
-            make_test_candidate(0, CandidateRepresentation::FullFrame, 1.0, DisposalMethod::Keep),
+            make_test_candidate(
+                0,
+                CandidateRepresentation::FullFrame,
+                1.0,
+                DisposalMethod::Keep,
+            ),
             make_test_candidate(
                 0,
                 CandidateRepresentation::ExactOpaqueBbox {
@@ -469,7 +480,12 @@ mod tests {
                 0.15,
                 DisposalMethod::Keep,
             ),
-            make_test_candidate(0, CandidateRepresentation::MinimalNoOp, 0.0, DisposalMethod::Keep),
+            make_test_candidate(
+                0,
+                CandidateRepresentation::MinimalNoOp,
+                0.0,
+                DisposalMethod::Keep,
+            ),
         ];
 
         let signals = make_test_signals();
@@ -481,14 +497,22 @@ mod tests {
 
         // Should retain at least 1 candidate
         let retained_count = results.iter().filter(|r| r.candidate.is_some()).count();
-        assert!(retained_count >= 1, "Expected at least 1 retained candidate");
+        assert!(
+            retained_count >= 1,
+            "Expected at least 1 retained candidate"
+        );
     }
 
     #[test]
     fn test_transparency_heavy_retains_sparse() {
         // Transparency-heavy: should retain sparse patches when safe
         let candidates = vec![
-            make_test_candidate(0, CandidateRepresentation::FullFrame, 1.0, DisposalMethod::Keep),
+            make_test_candidate(
+                0,
+                CandidateRepresentation::FullFrame,
+                1.0,
+                DisposalMethod::Keep,
+            ),
             make_test_candidate(
                 0,
                 CandidateRepresentation::TransparentSparsePatch {
@@ -534,7 +558,12 @@ mod tests {
     fn test_disposal_background_prunes_sparse() {
         // Background disposal: should prune transparent sparse patches
         let candidates = vec![
-            make_test_candidate(0, CandidateRepresentation::FullFrame, 1.0, DisposalMethod::Background),
+            make_test_candidate(
+                0,
+                CandidateRepresentation::FullFrame,
+                1.0,
+                DisposalMethod::Background,
+            ),
             make_test_candidate(
                 0,
                 CandidateRepresentation::TransparentSparsePatch {
@@ -551,10 +580,12 @@ mod tests {
 
         // Should prune sparse patch (risky in Background disposal)
         let sparse_pruned = results.iter().any(|r| {
-            r.candidate.is_none()
-                && matches!(r.reason, PruneReason::PrunedByTransparencyRisk)
+            r.candidate.is_none() && matches!(r.reason, PruneReason::PrunedByTransparencyRisk)
         });
-        assert!(sparse_pruned, "Expected sparse patch to be pruned in Background disposal");
+        assert!(
+            sparse_pruned,
+            "Expected sparse patch to be pruned in Background disposal"
+        );
 
         // Should retain at least FullFrame
         let full_frame_retained = results.iter().any(|r| {
@@ -571,7 +602,12 @@ mod tests {
     fn test_never_prunes_to_empty() {
         // Property test: never prune all candidates
         let candidates = vec![
-            make_test_candidate(0, CandidateRepresentation::FullFrame, 1.0, DisposalMethod::Keep),
+            make_test_candidate(
+                0,
+                CandidateRepresentation::FullFrame,
+                1.0,
+                DisposalMethod::Keep,
+            ),
             make_test_candidate(
                 0,
                 CandidateRepresentation::ExactOpaqueBbox {
@@ -586,14 +622,22 @@ mod tests {
         let results = Tier1Pruner::prune_frame(&candidates, &signals, DisposalMethod::Keep);
 
         let retained_count = results.iter().filter(|r| r.candidate.is_some()).count();
-        assert!(retained_count >= 1, "Expected at least 1 candidate retained");
+        assert!(
+            retained_count >= 1,
+            "Expected at least 1 candidate retained"
+        );
     }
 
     #[test]
     fn test_pruning_is_deterministic() {
         // Pruning should be deterministic: same input → same output
         let candidates = vec![
-            make_test_candidate(0, CandidateRepresentation::FullFrame, 1.0, DisposalMethod::Keep),
+            make_test_candidate(
+                0,
+                CandidateRepresentation::FullFrame,
+                1.0,
+                DisposalMethod::Keep,
+            ),
             make_test_candidate(
                 0,
                 CandidateRepresentation::ExactOpaqueBbox {
@@ -624,9 +668,12 @@ mod tests {
     fn test_restores_candidate_when_all_pruned() {
         // If all candidates would be pruned, restore the best one
         // This is a synthetic test case where all pruning rules would fire
-        let candidates = vec![
-            make_test_candidate(0, CandidateRepresentation::FullFrame, 1.0, DisposalMethod::Keep),
-        ];
+        let candidates = vec![make_test_candidate(
+            0,
+            CandidateRepresentation::FullFrame,
+            1.0,
+            DisposalMethod::Keep,
+        )];
 
         let signals = make_test_signals();
         let results = Tier1Pruner::prune_frame(&candidates, &signals, DisposalMethod::Keep);
@@ -649,7 +696,12 @@ mod tests {
                 0.15,
                 DisposalMethod::Keep,
             ),
-            make_test_candidate(0, CandidateRepresentation::FullFrame, 1.0, DisposalMethod::Keep),
+            make_test_candidate(
+                0,
+                CandidateRepresentation::FullFrame,
+                1.0,
+                DisposalMethod::Keep,
+            ),
         ];
 
         let signals = PolicySignals {
@@ -671,14 +723,20 @@ mod tests {
         // FullFrame should be pruned (by LUT eligibility filter since it's LUT-breaking)
         let full_frame_pruned = results.iter().any(|r| {
             r.candidate.is_none()
-                && matches!(r.reason, PruneReason::PrunedByLutPolicy | PruneReason::PrunedByStructuralDominance)
+                && matches!(
+                    r.reason,
+                    PruneReason::PrunedByLutPolicy | PruneReason::PrunedByStructuralDominance
+                )
         });
         assert!(full_frame_pruned, "Expected FullFrame to be pruned");
 
         // OpaqueBbox should be retained
         let opaque_retained = results.iter().any(|r| {
             if let Some(c) = &r.candidate {
-                matches!(c.representation, CandidateRepresentation::ExactOpaqueBbox { .. })
+                matches!(
+                    c.representation,
+                    CandidateRepresentation::ExactOpaqueBbox { .. }
+                )
             } else {
                 false
             }
@@ -690,8 +748,18 @@ mod tests {
     fn test_minimal_noop_dominates_others() {
         // MinimalNoOp with Keep disposal should dominate all other candidates
         let candidates = vec![
-            make_test_candidate(0, CandidateRepresentation::MinimalNoOp, 0.0, DisposalMethod::Keep),
-            make_test_candidate(0, CandidateRepresentation::FullFrame, 1.0, DisposalMethod::Keep),
+            make_test_candidate(
+                0,
+                CandidateRepresentation::MinimalNoOp,
+                0.0,
+                DisposalMethod::Keep,
+            ),
+            make_test_candidate(
+                0,
+                CandidateRepresentation::FullFrame,
+                1.0,
+                DisposalMethod::Keep,
+            ),
             make_test_candidate(
                 0,
                 CandidateRepresentation::ExactOpaqueBbox {
@@ -723,7 +791,12 @@ mod tests {
     fn test_disposal_previous_prunes_sparse() {
         // Previous disposal: should also prune transparent sparse patches
         let candidates = vec![
-            make_test_candidate(0, CandidateRepresentation::FullFrame, 1.0, DisposalMethod::Previous),
+            make_test_candidate(
+                0,
+                CandidateRepresentation::FullFrame,
+                1.0,
+                DisposalMethod::Previous,
+            ),
             make_test_candidate(
                 0,
                 CandidateRepresentation::TransparentSparsePatch {
@@ -740,10 +813,12 @@ mod tests {
 
         // Sparse patch should be pruned
         let sparse_pruned = results.iter().any(|r| {
-            r.candidate.is_none()
-                && matches!(r.reason, PruneReason::PrunedByTransparencyRisk)
+            r.candidate.is_none() && matches!(r.reason, PruneReason::PrunedByTransparencyRisk)
         });
-        assert!(sparse_pruned, "Expected sparse patch to be pruned in Previous disposal");
+        assert!(
+            sparse_pruned,
+            "Expected sparse patch to be pruned in Previous disposal"
+        );
     }
 
     #[test]
@@ -759,7 +834,12 @@ mod tests {
                 0.15,
                 DisposalMethod::Keep,
             ),
-            make_test_candidate(0, CandidateRepresentation::FullFrame, 1.0, DisposalMethod::Keep),
+            make_test_candidate(
+                0,
+                CandidateRepresentation::FullFrame,
+                1.0,
+                DisposalMethod::Keep,
+            ),
         ];
 
         let signals = PolicySignals {
@@ -781,7 +861,12 @@ mod tests {
         // FullFrame should be pruned (by LUT eligibility filter since it's LUT-breaking)
         let full_frame_pruned = results.iter().any(|r| {
             r.candidate.is_none()
-                && matches!(r.reason, PruneReason::PrunedByPaletteChurnRisk | PruneReason::PrunedByStructuralDominance | PruneReason::PrunedByLutPolicy)
+                && matches!(
+                    r.reason,
+                    PruneReason::PrunedByPaletteChurnRisk
+                        | PruneReason::PrunedByStructuralDominance
+                        | PruneReason::PrunedByLutPolicy
+                )
         });
         assert!(full_frame_pruned, "Expected FullFrame to be pruned");
     }
@@ -815,23 +900,26 @@ mod tests {
 
         // Risky sparse should be pruned
         let risky_pruned = results.iter().any(|r| {
-            r.candidate.is_none()
-                && matches!(r.reason, PruneReason::PrunedByStructuralDominance)
+            r.candidate.is_none() && matches!(r.reason, PruneReason::PrunedByStructuralDominance)
         });
         assert!(risky_pruned, "Expected risky sparse patch to be pruned");
 
         // Non-risky sparse should be retained
         let safe_sparse_retained = results.iter().any(|r| {
             if let Some(c) = &r.candidate {
-                if let CandidateRepresentation::TransparentSparsePatch { is_risky: false, .. } =
-                    c.representation
+                if let CandidateRepresentation::TransparentSparsePatch {
+                    is_risky: false, ..
+                } = c.representation
                 {
                     return true;
                 }
             }
             false
         });
-        assert!(safe_sparse_retained, "Expected safe sparse patch to be retained");
+        assert!(
+            safe_sparse_retained,
+            "Expected safe sparse patch to be retained"
+        );
     }
 
     #[test]
@@ -846,7 +934,12 @@ mod tests {
                 0.2,
                 DisposalMethod::Keep,
             ),
-            make_test_candidate(0, CandidateRepresentation::FullFrame, 1.0, DisposalMethod::Keep),
+            make_test_candidate(
+                0,
+                CandidateRepresentation::FullFrame,
+                1.0,
+                DisposalMethod::Keep,
+            ),
         ];
 
         let signals = PolicySignals {
@@ -868,7 +961,10 @@ mod tests {
         // FullFrame (LUT-breaking) should be pruned by LUT eligibility filter
         let full_frame_pruned = results.iter().any(|r| {
             r.candidate.is_none()
-                && matches!(r.reason, PruneReason::PrunedByLutPolicy | PruneReason::PrunedByStructuralDominance)
+                && matches!(
+                    r.reason,
+                    PruneReason::PrunedByLutPolicy | PruneReason::PrunedByStructuralDominance
+                )
         });
         assert!(full_frame_pruned, "Expected FullFrame to be pruned");
     }

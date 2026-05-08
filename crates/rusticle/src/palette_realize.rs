@@ -214,7 +214,8 @@ impl PaletteRealizer {
         let (mut indices, _stats) = lut.map_buffer(&frame.pixels);
 
         // Find and remap transparent index
-        let transparent_idx = Self::find_transparent_index_and_remap(&frame.pixels, &mut indices, lut)?;
+        let transparent_idx =
+            Self::find_transparent_index_and_remap(&frame.pixels, &mut indices, lut)?;
 
         Ok(QuantizedFrameData {
             indices,
@@ -257,7 +258,8 @@ impl PaletteRealizer {
         let (mut indices, _stats) = lut.map_buffer(&frame.pixels);
 
         // Find and remap transparent index
-        let transparent_idx = Self::find_transparent_index_and_remap(&frame.pixels, &mut indices, &lut)?;
+        let transparent_idx =
+            Self::find_transparent_index_and_remap(&frame.pixels, &mut indices, &lut)?;
 
         Ok(QuantizedFrameData {
             indices,
@@ -518,9 +520,9 @@ mod tests {
     fn create_test_gif_with_global_palette() -> Gif {
         let palette = crate::types::Palette {
             colors: vec![
-                [255, 0, 0],   // Red
-                [0, 255, 0],   // Green
-                [0, 0, 255],   // Blue
+                [255, 0, 0], // Red
+                [0, 255, 0], // Green
+                [0, 0, 255], // Blue
             ],
         };
 
@@ -574,10 +576,16 @@ mod tests {
 
         assert!(result.is_ok(), "Should realize with reuse-global-preferred");
         let realization = result.unwrap();
-        assert!(realization.global_palette.is_some(), "Should have global palette");
+        assert!(
+            realization.global_palette.is_some(),
+            "Should have global palette"
+        );
         assert_eq!(realization.frames.len(), 2, "Should have 2 frames");
         for frame in &realization.frames {
-            assert!(frame.local_palette.is_none(), "Should not have local palette");
+            assert!(
+                frame.local_palette.is_none(),
+                "Should not have local palette"
+            );
         }
     }
 
@@ -597,7 +605,10 @@ mod tests {
 
         assert!(result.is_ok(), "Should realize with fallback to derive");
         let realization = result.unwrap();
-        assert!(realization.global_palette.is_some(), "Should have global palette");
+        assert!(
+            realization.global_palette.is_some(),
+            "Should have global palette"
+        );
         assert_eq!(realization.frames.len(), 2, "Should have 2 frames");
     }
 
@@ -618,10 +629,16 @@ mod tests {
 
         assert!(result.is_ok(), "Should derive sequence global palette");
         let realization = result.unwrap();
-        assert!(realization.global_palette.is_some(), "Should have global palette");
+        assert!(
+            realization.global_palette.is_some(),
+            "Should have global palette"
+        );
         assert_eq!(realization.frames.len(), 3, "Should have 3 frames");
         for frame in &realization.frames {
-            assert!(frame.local_palette.is_none(), "Should not have local palette");
+            assert!(
+                frame.local_palette.is_none(),
+                "Should not have local palette"
+            );
             assert!(!frame.indices.is_empty(), "Should have indices");
         }
     }
@@ -642,7 +659,10 @@ mod tests {
 
         assert!(result.is_ok(), "Should realize with local palette fallback");
         let realization = result.unwrap();
-        assert!(realization.global_palette.is_none(), "Should not have global palette");
+        assert!(
+            realization.global_palette.is_none(),
+            "Should not have global palette"
+        );
         assert_eq!(realization.frames.len(), 2, "Should have 2 frames");
         for frame in &realization.frames {
             assert!(frame.local_palette.is_some(), "Should have local palette");
@@ -692,7 +712,10 @@ mod tests {
         let realization = result.unwrap();
         assert_eq!(realization.frames.len(), 1);
         let frame = &realization.frames[0];
-        assert!(frame.transparent_idx.is_some(), "Should have transparent index");
+        assert!(
+            frame.transparent_idx.is_some(),
+            "Should have transparent index"
+        );
     }
 
     #[test]
@@ -744,7 +767,10 @@ mod tests {
         let coverage = PaletteRealizer::check_palette_coverage(&materialized_frames, &lut);
         assert!(coverage.is_ok());
         let stats = coverage.unwrap();
-        assert!(stats.acceptable_ratio > 0.0, "Should have some acceptable coverage");
+        assert!(
+            stats.acceptable_ratio > 0.0,
+            "Should have some acceptable coverage"
+        );
     }
 
     #[test]
@@ -808,7 +834,10 @@ mod tests {
         for frame in &realization.frames {
             assert!(frame.local_palette.is_some());
             assert!(!frame.indices.is_empty());
-            assert!(frame.transparent_idx.is_some(), "Should have transparent index");
+            assert!(
+                frame.transparent_idx.is_some(),
+                "Should have transparent index"
+            );
         }
     }
 

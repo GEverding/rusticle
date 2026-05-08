@@ -1,10 +1,13 @@
 //! Integration tests for encode-and-measure functionality.
 
 use rusticle::{
-    adaptive_ir::CanonicalSequenceBuilder, candidate_gen::CandidateGenerator,
+    adaptive_ir::CanonicalSequenceBuilder,
+    candidate_gen::CandidateGenerator,
     encode_and_measure::{EncodeAndMeasure, EncodeAndMeasureConfig},
-    profiler::profile_canonical_sequence, scoring::Chooser, CandidateRepresentation, Gif,
     palette_strategy::determine_palette_strategies,
+    profiler::profile_canonical_sequence,
+    scoring::Chooser,
+    CandidateRepresentation, Gif,
 };
 use std::time::Duration;
 
@@ -89,14 +92,8 @@ fn test_encode_and_measure_disabled() {
         &palette_strategies,
     );
 
-    let (_result_decision, telemetry) = EncodeAndMeasure::apply_if_uncertain(
-        decision,
-        0,
-        &canonical,
-        &gif,
-        &profile,
-        &config,
-    );
+    let (_result_decision, telemetry) =
+        EncodeAndMeasure::apply_if_uncertain(decision, 0, &canonical, &gif, &profile, &config);
 
     // Should not be uncertain since disabled
     assert!(!telemetry.was_uncertain);
@@ -135,14 +132,8 @@ fn test_encode_and_measure_uncertainty_detection() {
         &palette_strategies,
     );
 
-    let (_, telemetry) = EncodeAndMeasure::apply_if_uncertain(
-        decision,
-        0,
-        &canonical,
-        &gif,
-        &profile,
-        &config,
-    );
+    let (_, telemetry) =
+        EncodeAndMeasure::apply_if_uncertain(decision, 0, &canonical, &gif, &profile, &config);
 
     // With high threshold, should detect uncertainty
     // (may or may not be uncertain depending on actual scores, but config is enabled)

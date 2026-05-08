@@ -179,11 +179,7 @@ fn compute_quality_metrics(
 pub fn encode_rusticle_default(data: &[u8]) -> Option<(Vec<u8>, f64)> {
     let start = Instant::now();
     let gif = Gif::from_bytes(data).ok()?;
-    let output = gif
-        .optimize(OptLevel::O3)
-        .lossy(80)
-        .to_bytes()
-        .ok()?;
+    let output = gif.optimize(OptLevel::O3).lossy(80).to_bytes().ok()?;
     let runtime_ms = start.elapsed().as_secs_f64() * 1000.0;
     Some((output, runtime_ms))
 }
@@ -198,16 +194,14 @@ pub fn encode_rusticle_tiered(data: &[u8]) -> Option<TieredEncodeResult> {
         emit_telemetry: false,
     };
     let (decision, output) = gif.encode_adaptive(&config).ok()?;
-    
+
     // Decode the adaptive output and apply the same optimizations as default path
     let adaptive_gif = Gif::from_bytes(&output).ok()?;
-    let optimized = adaptive_gif
-        .optimize(OptLevel::O3)
-        .lossy(80);
+    let optimized = adaptive_gif.optimize(OptLevel::O3).lossy(80);
     let final_output = optimized.to_bytes().ok()?;
-    
+
     let runtime_ms = start.elapsed().as_secs_f64() * 1000.0;
-    
+
     // Extract tiered telemetry if available
     let tiered_telemetry = decision.tiered_telemetry.map(|t| TieredTelemetry {
         tier0_decision: t.tier0_decision,
@@ -218,15 +212,18 @@ pub fn encode_rusticle_tiered(data: &[u8]) -> Option<TieredEncodeResult> {
         sequence_optimizer_chunks: t.sequence_optimizer_chunks,
         sequence_optimizer_summary: t.sequence_optimizer_summary,
     });
-    
-    Some((final_output, runtime_ms, decision.success, decision.fallback_reason, tiered_telemetry))
+
+    Some((
+        final_output,
+        runtime_ms,
+        decision.success,
+        decision.fallback_reason,
+        tiered_telemetry,
+    ))
 }
 
 pub fn encode_gifsicle(path: &Path) -> Option<(Vec<u8>, f64)> {
-    let out_name = format!(
-        "tiered_eval_{}_gifsicle.gif",
-        std::process::id()
-    );
+    let out_name = format!("tiered_eval_{}_gifsicle.gif", std::process::id());
     let out_path = std::env::temp_dir().join(out_name);
 
     let start = Instant::now();
@@ -248,10 +245,7 @@ pub fn encode_gifsicle(path: &Path) -> Option<(Vec<u8>, f64)> {
     Some((output, runtime_ms))
 }
 
-pub fn evaluate_file(
-    path: &Path,
-    category: &str,
-) -> Option<TieredEvalResult> {
+pub fn evaluate_file(path: &Path, category: &str) -> Option<TieredEvalResult> {
     let file_name = path.file_name()?.to_string_lossy().to_string();
     let file_path = path.to_string_lossy().to_string();
     let data = fs::read(path).ok()?;
@@ -320,7 +314,9 @@ pub fn evaluate_file(
     }
 
     // Rusticle tiered adaptive
-    if let Some((output, runtime_ms, success, fallback_reason, telem)) = encode_rusticle_tiered(&data) {
+    if let Some((output, runtime_ms, success, fallback_reason, telem)) =
+        encode_rusticle_tiered(&data)
+    {
         if let Some((avg_psnr, avg_ssim, worst_psnr, worst_ssim, avg_ba, worst_ba)) =
             compute_quality_metrics(&data, &output, width, height)
         {
@@ -473,45 +469,90 @@ pub fn compute_aggregate_metrics(results: &[TieredEvalResult]) -> AggregateMetri
         }
     }
 
-    let avg = |v: &[f64]| if v.is_empty() { 0.0 } else { v.iter().sum::<f64>() / v.len() as f64 };
+    let avg = |v: &[f64]| {
+        if v.is_empty() {
+            0.0
+        } else {
+            v.iter().sum::<f64>() / v.len() as f64
+        }
+    };
     let min = |v: &[f64]| v.iter().cloned().fold(f64::INFINITY, f64::min);
 
     AggregateMetrics {
         gifsicle_baseline: ProfileAggregate {
             avg_output_bytes: avg(&gifsicle_bytes),
-            avg_compression_ratio: avg(&gifsicle_bytes) / avg(&[results.iter().map(|r| r.input_bytes as f64).sum::<f64>() / results.len() as f64]),
+            avg_compression_ratio: avg(&gifsicle_bytes)
+                / avg(&[results.iter().map(|r| r.input_bytes as f64).sum::<f64>()
+                    / results.len() as f64]),
             avg_psnr: avg(&gifsicle_psnr),
             avg_ssim: avg(&gifsicle_ssim),
             worst_psnr: min(&gifsicle_worst_psnr),
             worst_ssim: min(&gifsicle_worst_ssim),
-            avg_butteraugli: if gifsicle_ba.is_empty() { None } else { Some(avg(&gifsicle_ba)) },
-            worst_butteraugli: if gifsicle_worst_ba.is_empty() { None } else { Some(gifsicle_worst_ba.iter().cloned().fold(0.0, f64::max)) },
+            avg_butteraugli: if gifsicle_ba.is_empty() {
+                None
+            } else {
+                Some(avg(&gifsicle_ba))
+            },
+            worst_butteraugli: if gifsicle_worst_ba.is_empty() {
+                None
+            } else {
+                Some(gifsicle_worst_ba.iter().cloned().fold(0.0, f64::max))
+            },
             avg_runtime_ms: avg(&gifsicle_runtime),
         },
         rusticle_default: ProfileAggregate {
             avg_output_bytes: avg(&rusticle_default_bytes),
-            avg_compression_ratio: avg(&rusticle_default_bytes) / avg(&[results.iter().map(|r| r.input_bytes as f64).sum::<f64>() / results.len() as f64]),
+            avg_compression_ratio: avg(&rusticle_default_bytes)
+                / avg(&[results.iter().map(|r| r.input_bytes as f64).sum::<f64>()
+                    / results.len() as f64]),
             avg_psnr: avg(&rusticle_default_psnr),
             avg_ssim: avg(&rusticle_default_ssim),
             worst_psnr: min(&rusticle_default_worst_psnr),
             worst_ssim: min(&rusticle_default_worst_ssim),
-            avg_butteraugli: if rusticle_default_ba.is_empty() { None } else { Some(avg(&rusticle_default_ba)) },
-            worst_butteraugli: if rusticle_default_worst_ba.is_empty() { None } else { Some(rusticle_default_worst_ba.iter().cloned().fold(0.0, f64::max)) },
+            avg_butteraugli: if rusticle_default_ba.is_empty() {
+                None
+            } else {
+                Some(avg(&rusticle_default_ba))
+            },
+            worst_butteraugli: if rusticle_default_worst_ba.is_empty() {
+                None
+            } else {
+                Some(
+                    rusticle_default_worst_ba
+                        .iter()
+                        .cloned()
+                        .fold(0.0, f64::max),
+                )
+            },
             avg_runtime_ms: avg(&rusticle_default_runtime),
         },
         rusticle_tiered_adaptive: ProfileAggregate {
             avg_output_bytes: avg(&tiered_bytes),
-            avg_compression_ratio: avg(&tiered_bytes) / avg(&[results.iter().map(|r| r.input_bytes as f64).sum::<f64>() / results.len() as f64]),
+            avg_compression_ratio: avg(&tiered_bytes)
+                / avg(&[results.iter().map(|r| r.input_bytes as f64).sum::<f64>()
+                    / results.len() as f64]),
             avg_psnr: avg(&tiered_psnr),
             avg_ssim: avg(&tiered_ssim),
             worst_psnr: min(&tiered_worst_psnr),
             worst_ssim: min(&tiered_worst_ssim),
-            avg_butteraugli: if tiered_ba.is_empty() { None } else { Some(avg(&tiered_ba)) },
-            worst_butteraugli: if tiered_worst_ba.is_empty() { None } else { Some(tiered_worst_ba.iter().cloned().fold(0.0, f64::max)) },
+            avg_butteraugli: if tiered_ba.is_empty() {
+                None
+            } else {
+                Some(avg(&tiered_ba))
+            },
+            worst_butteraugli: if tiered_worst_ba.is_empty() {
+                None
+            } else {
+                Some(tiered_worst_ba.iter().cloned().fold(0.0, f64::max))
+            },
             avg_runtime_ms: avg(&tiered_runtime),
         },
         tiered_fallback_count,
-        tiered_fallback_rate: if results.is_empty() { 0.0 } else { tiered_fallback_count as f64 / results.len() as f64 },
+        tiered_fallback_rate: if results.is_empty() {
+            0.0
+        } else {
+            tiered_fallback_count as f64 / results.len() as f64
+        },
     }
 }
 
@@ -524,7 +565,9 @@ pub fn compute_tiered_analysis(results: &[TieredEvalResult]) -> TieredAnalysis {
 
     for result in results {
         if let Some(telem) = &result.tiered_telemetry {
-            *tier0_distribution.entry(telem.tier0_decision.clone()).or_insert(0) += 1;
+            *tier0_distribution
+                .entry(telem.tier0_decision.clone())
+                .or_insert(0) += 1;
             candidates_before.push(telem.candidates_before_pruning as f64);
             candidates_after.push(telem.candidates_after_pruning as f64);
             if telem.tier2_measurement_ran {
@@ -534,8 +577,14 @@ pub fn compute_tiered_analysis(results: &[TieredEvalResult]) -> TieredAnalysis {
         }
     }
 
-    let avg = |v: &[f64]| if v.is_empty() { 0.0 } else { v.iter().sum::<f64>() / v.len() as f64 };
-    
+    let avg = |v: &[f64]| {
+        if v.is_empty() {
+            0.0
+        } else {
+            v.iter().sum::<f64>() / v.len() as f64
+        }
+    };
+
     let avg_before = avg(&candidates_before);
     let avg_after = avg(&candidates_after);
     let avg_pruning_rate = if avg_before > 0.0 {
@@ -550,7 +599,11 @@ pub fn compute_tiered_analysis(results: &[TieredEvalResult]) -> TieredAnalysis {
         avg_candidates_after_pruning: avg_after,
         avg_pruning_rate,
         tier2_measurement_usage_count: tier2_count,
-        tier2_measurement_rate: if results.is_empty() { 0.0 } else { tier2_count as f64 / results.len() as f64 },
+        tier2_measurement_rate: if results.is_empty() {
+            0.0
+        } else {
+            tier2_count as f64 / results.len() as f64
+        },
         avg_sequence_optimizer_chunks: avg(&chunks),
     }
 }

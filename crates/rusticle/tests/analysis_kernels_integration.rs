@@ -6,7 +6,7 @@
 use rusticle::{
     adaptive_ir::Canvas,
     analysis_kernels::{
-        analyze_changed_pixels_simd, analyze_transparency_simd, analyze_color_distance_simd,
+        analyze_changed_pixels_simd, analyze_color_distance_simd, analyze_transparency_simd,
     },
 };
 
@@ -118,7 +118,7 @@ fn test_kernels_with_small_changes() {
     for y in 10..20 {
         for x in 10..20 {
             let idx = (y as usize * width as usize + x as usize) * 4;
-            displayed.pixels[idx] = 0;     // R
+            displayed.pixels[idx] = 0; // R
             displayed.pixels[idx + 1] = 0; // G
             displayed.pixels[idx + 2] = 255; // B
         }
@@ -145,7 +145,10 @@ fn test_kernels_correctness_with_threshold() {
 
     // With threshold 0: all pixels changed
     let stats_strict = analyze_changed_pixels_simd(&frame1.pixels, &frame2.pixels, 0);
-    assert_eq!(stats_strict.changed_count, (width as usize) * (height as usize));
+    assert_eq!(
+        stats_strict.changed_count,
+        (width as usize) * (height as usize)
+    );
 
     // With threshold 3: no pixels changed (all diffs <= 2)
     let stats_loose = analyze_changed_pixels_simd(&frame1.pixels, &frame2.pixels, 3);

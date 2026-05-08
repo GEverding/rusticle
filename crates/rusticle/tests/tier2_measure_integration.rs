@@ -142,7 +142,10 @@ fn test_safe_opaque_lut_preserving_wins_under_guardrails() {
 
     // Check if uncertain (should be, due to LUT-breaking with close preserving alternative)
     let (is_uncertain, reasons) = Tier2Measurer::is_uncertain(&decision, &guardrails);
-    assert!(is_uncertain, "Should be uncertain due to LUT-breaking with close alternative");
+    assert!(
+        is_uncertain,
+        "Should be uncertain due to LUT-breaking with close alternative"
+    );
     assert!(
         reasons.iter().any(|r| r.contains("lut_breaking")),
         "Should mention LUT-breaking reason"
@@ -263,14 +266,14 @@ fn test_all_candidates_fail_guardrails_explicit_fallback() {
     let (ff_passed, _) = Tier2Measurer::passes_guardrails(&full_frame_result, &guardrails);
     let (sp_passed, _) = Tier2Measurer::passes_guardrails(&sparse_result, &guardrails);
     assert!(!ff_passed, "FullFrame should fail guardrails (low PSNR)");
-    assert!(!sp_passed, "Sparse should fail guardrails (high transparency risk)");
+    assert!(
+        !sp_passed,
+        "Sparse should fail guardrails (high transparency risk)"
+    );
 
     // Fallback path is explicit: no feasible candidates
     let results = vec![&full_frame_result, &sparse_result];
-    let feasible: Vec<_> = results
-        .iter()
-        .filter(|r| r.passed_guardrails)
-        .collect();
+    let feasible: Vec<_> = results.iter().filter(|r| r.passed_guardrails).collect();
     assert!(
         feasible.is_empty(),
         "No candidates should be feasible when all fail guardrails"
@@ -281,7 +284,10 @@ fn test_all_candidates_fail_guardrails_explicit_fallback() {
 #[test]
 fn test_tier2_bounded_by_config() {
     let easy_budget = MeasurementBudget::for_class(CpuBudgetClass::Easy);
-    assert!(!easy_budget.is_enabled(), "Easy class should have zero budget");
+    assert!(
+        !easy_budget.is_enabled(),
+        "Easy class should have zero budget"
+    );
     assert_eq!(easy_budget.max_trial_frames, 0);
     assert_eq!(easy_budget.max_wall_clock_ms, 0);
 
@@ -391,8 +397,5 @@ fn test_uncertainty_detection_score_gap() {
     };
 
     let (is_uncertain, _) = Tier2Measurer::is_uncertain(&decision_wide, &guardrails);
-    assert!(
-        !is_uncertain,
-        "Should not be uncertain with wide score gap"
-    );
+    assert!(!is_uncertain, "Should not be uncertain with wide score gap");
 }

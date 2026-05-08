@@ -111,7 +111,10 @@ impl CandidateFamily {
 
     /// Whether this family is LUT-breaking.
     pub fn is_lut_breaking(&self) -> bool {
-        matches!(self, Self::FullFrame | Self::TransparentSparse | Self::PaletteBreaking)
+        matches!(
+            self,
+            Self::FullFrame | Self::TransparentSparse | Self::PaletteBreaking
+        )
     }
 }
 
@@ -248,10 +251,7 @@ impl PolicySignals {
     ///
     /// This is a first-pass mapping function that converts profiler/scoring inputs
     /// into typed policy concepts. It can be refined by later tasks.
-    pub fn from_profile_and_score(
-        profile: &GifProfile,
-        score: &ScoreBreakdown,
-    ) -> Self {
+    pub fn from_profile_and_score(profile: &GifProfile, score: &ScoreBreakdown) -> Self {
         let lut_eligibility = classify_lut_eligibility(profile);
         let cpu_budget_class = classify_cpu_budget(profile);
         let taxonomy_fragility = estimate_taxonomy_fragility(profile);
@@ -285,7 +285,9 @@ pub fn candidate_to_family(candidate: &CandidateRepresentation) -> CandidateFami
     match candidate {
         CandidateRepresentation::FullFrame => CandidateFamily::FullFrame,
         CandidateRepresentation::ExactOpaqueBbox { .. } => CandidateFamily::OpaqueBbox,
-        CandidateRepresentation::TransparentSparsePatch { .. } => CandidateFamily::TransparentSparse,
+        CandidateRepresentation::TransparentSparsePatch { .. } => {
+            CandidateFamily::TransparentSparse
+        }
         CandidateRepresentation::MinimalNoOp => CandidateFamily::MinimalNoOp,
     }
 }
@@ -533,7 +535,10 @@ mod tests {
         let budget = classify_cpu_budget(&profile);
         // 20 frames * 480000 pixels * 0.3 ratio / 1M = 2.88, which is < 10, so Easy
         // Let's adjust the test to expect Easy or Medium
-        assert!(matches!(budget, CpuBudgetClass::Easy | CpuBudgetClass::Medium));
+        assert!(matches!(
+            budget,
+            CpuBudgetClass::Easy | CpuBudgetClass::Medium
+        ));
     }
 
     #[test]

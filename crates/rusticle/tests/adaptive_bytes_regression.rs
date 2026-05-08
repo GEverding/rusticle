@@ -10,8 +10,7 @@
 //! Tests are deterministic, self-contained, and fast (small synthetic GIFs only).
 
 use rusticle::{
-    AdaptiveConfig, CanonicalSequenceBuilder, DisposalMethod, Frame, Gif, LoopCount,
-    QualityMetrics,
+    AdaptiveConfig, CanonicalSequenceBuilder, DisposalMethod, Frame, Gif, LoopCount, QualityMetrics,
 };
 use std::time::Duration;
 
@@ -94,8 +93,8 @@ fn adaptive_round_trip(gif: &Gif) -> Result<(rusticle::AdaptiveDecision, Gif), S
         .encode_adaptive(&config)
         .expect("encode_adaptive must not fail");
     assert!(!bytes.is_empty(), "adaptive output must not be empty");
-    let decoded = Gif::from_bytes(&bytes)
-        .map_err(|e| format!("adaptive output is not a valid GIF: {e}"))?;
+    let decoded =
+        Gif::from_bytes(&bytes).map_err(|e| format!("adaptive output is not a valid GIF: {e}"))?;
     Ok((decision, decoded))
 }
 
@@ -149,12 +148,21 @@ fn test_adaptive_single_frame_canvas_preserved() {
     let w = 20u16;
     let h = 20u16;
     let pixels = solid_canvas(w, h, 200, 100, 50);
-    let gif = make_gif(w, h, vec![make_frame(pixels.clone(), w, h, DisposalMethod::Keep, 100)]);
+    let gif = make_gif(
+        w,
+        h,
+        vec![make_frame(pixels.clone(), w, h, DisposalMethod::Keep, 100)],
+    );
 
     let canonical_seq = CanonicalSequenceBuilder::build(&gif).expect("build canonical");
-    let (_decision, decoded) = adaptive_round_trip(&gif).expect("single-frame round-trip must succeed");
+    let (_decision, decoded) =
+        adaptive_round_trip(&gif).expect("single-frame round-trip must succeed");
 
-    assert_eq!(decoded.frames.len(), 1, "single-frame: frame count must be 1");
+    assert_eq!(
+        decoded.frames.len(),
+        1,
+        "single-frame: frame count must be 1"
+    );
     assert_eq!(decoded.width, w);
     assert_eq!(decoded.height, h);
 
@@ -182,16 +190,39 @@ fn test_adaptive_opaque_delta_global_palette_canvases_preserved() {
     let h = 24u16;
 
     let frames = vec![
-        make_frame(solid_canvas(w, h, 200, 50, 50), w, h, DisposalMethod::Keep, 100),
-        make_frame(solid_canvas(w, h, 50, 50, 200), w, h, DisposalMethod::Keep, 100),
-        make_frame(solid_canvas(w, h, 50, 200, 50), w, h, DisposalMethod::Keep, 100),
+        make_frame(
+            solid_canvas(w, h, 200, 50, 50),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 50, 50, 200),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 50, 200, 50),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
     ];
     let gif = make_gif(w, h, frames);
 
     let canonical_seq = CanonicalSequenceBuilder::build(&gif).expect("build canonical");
-    let (_decision, decoded) = adaptive_round_trip(&gif).expect("opaque-delta round-trip must succeed");
+    let (_decision, decoded) =
+        adaptive_round_trip(&gif).expect("opaque-delta round-trip must succeed");
 
-    assert_eq!(decoded.frames.len(), 3, "opaque-delta: frame count must be 3");
+    assert_eq!(
+        decoded.frames.len(),
+        3,
+        "opaque-delta: frame count must be 3"
+    );
     assert_eq!(decoded.width, w);
     assert_eq!(decoded.height, h);
 
@@ -226,9 +257,27 @@ fn test_adaptive_background_disposal_canvases_preserved() {
     let h = 20u16;
 
     let frames = vec![
-        make_frame(solid_canvas(w, h, 200, 50, 50), w, h, DisposalMethod::Keep, 100),
-        make_frame(solid_canvas(w, h, 50, 50, 200), w, h, DisposalMethod::Background, 100),
-        make_frame(solid_canvas(w, h, 50, 200, 50), w, h, DisposalMethod::Keep, 100),
+        make_frame(
+            solid_canvas(w, h, 200, 50, 50),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 50, 50, 200),
+            w,
+            h,
+            DisposalMethod::Background,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 50, 200, 50),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
     ];
     let gif = make_gif(w, h, frames);
 
@@ -261,7 +310,11 @@ fn test_adaptive_background_disposal_canvases_preserved() {
         }
         Ok((_decision, decoded)) => {
             // Bug is fixed: verify canonical semantics are preserved.
-            assert_eq!(decoded.frames.len(), 3, "background-disposal: frame count must be 3");
+            assert_eq!(
+                decoded.frames.len(),
+                3,
+                "background-disposal: frame count must be 3"
+            );
             let canvases = displayed_canvases(&decoded);
             for i in 0..3 {
                 assert_canvas_equivalent(
@@ -291,9 +344,27 @@ fn test_adaptive_previous_disposal_canvases_preserved() {
     let h = 20u16;
 
     let frames = vec![
-        make_frame(solid_canvas(w, h, 200, 50, 50), w, h, DisposalMethod::Keep, 100),
-        make_frame(solid_canvas(w, h, 50, 200, 50), w, h, DisposalMethod::Previous, 100),
-        make_frame(solid_canvas(w, h, 50, 50, 200), w, h, DisposalMethod::Keep, 100),
+        make_frame(
+            solid_canvas(w, h, 200, 50, 50),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 50, 200, 50),
+            w,
+            h,
+            DisposalMethod::Previous,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 50, 50, 200),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
     ];
     let gif = make_gif(w, h, frames);
 
@@ -307,9 +378,14 @@ fn test_adaptive_previous_disposal_canvases_preserved() {
         "canonical IR: Previous disposal must restore to pre-draw canvas (frame 0)"
     );
 
-    let (_decision, decoded) = adaptive_round_trip(&gif).expect("previous-disposal round-trip must succeed");
+    let (_decision, decoded) =
+        adaptive_round_trip(&gif).expect("previous-disposal round-trip must succeed");
 
-    assert_eq!(decoded.frames.len(), 3, "previous-disposal: frame count must be 3");
+    assert_eq!(
+        decoded.frames.len(),
+        3,
+        "previous-disposal: frame count must be 3"
+    );
 
     let canvases = displayed_canvases(&decoded);
     for i in 0..3 {
@@ -380,9 +456,14 @@ fn test_adaptive_transparent_sparse_patch_semantics_preserved() {
         patch_pixel[2]
     );
 
-    let (_decision, decoded) = adaptive_round_trip(&gif).expect("sparse-patch round-trip must succeed");
+    let (_decision, decoded) =
+        adaptive_round_trip(&gif).expect("sparse-patch round-trip must succeed");
 
-    assert_eq!(decoded.frames.len(), 2, "sparse-patch: frame count must be 2");
+    assert_eq!(
+        decoded.frames.len(),
+        2,
+        "sparse-patch: frame count must be 2"
+    );
 
     let canvases = displayed_canvases(&decoded);
 
@@ -453,9 +534,14 @@ fn test_adaptive_opaque_bbox_geometry_preserved() {
     let gif = make_gif(w, h, frames);
 
     let canonical_seq = CanonicalSequenceBuilder::build(&gif).expect("build canonical");
-    let (_decision, decoded) = adaptive_round_trip(&gif).expect("opaque-bbox round-trip must succeed");
+    let (_decision, decoded) =
+        adaptive_round_trip(&gif).expect("opaque-bbox round-trip must succeed");
 
-    assert_eq!(decoded.frames.len(), 2, "opaque-bbox: frame count must be 2");
+    assert_eq!(
+        decoded.frames.len(),
+        2,
+        "opaque-bbox: frame count must be 2"
+    );
     assert_eq!(decoded.width, w);
     assert_eq!(decoded.height, h);
 
@@ -519,7 +605,15 @@ fn test_adaptive_subframe_offset_geometry_preserved() {
 
     let frames = vec![
         make_frame(frame0_pixels, w, h, DisposalMethod::Keep, 100),
-        make_subframe(sf_pixels, sf_left, sf_top, sf_w, sf_h, DisposalMethod::Keep, 100),
+        make_subframe(
+            sf_pixels,
+            sf_left,
+            sf_top,
+            sf_w,
+            sf_h,
+            DisposalMethod::Keep,
+            100,
+        ),
     ];
     let gif = make_gif(w, h, frames);
 
@@ -607,7 +701,15 @@ fn test_canonical_ir_subframe_sized_pixels_handles_correctly() {
 
     let frames = vec![
         make_frame(frame0_pixels, w, h, DisposalMethod::Keep, 100),
-        make_subframe(sf_pixels_only, sf_left, sf_top, sf_w, sf_h, DisposalMethod::Keep, 100),
+        make_subframe(
+            sf_pixels_only,
+            sf_left,
+            sf_top,
+            sf_w,
+            sf_h,
+            DisposalMethod::Keep,
+            100,
+        ),
     ];
     let gif = make_gif(w, h, frames);
 
@@ -619,10 +721,22 @@ fn test_canonical_ir_subframe_sized_pixels_handles_correctly() {
 
     // Verify frame 1's source patch has correct metadata
     let frame1_patch = &canonical_seq.frames[1].source_patch;
-    assert_eq!(frame1_patch.width, sf_w, "source patch width must match subframe width");
-    assert_eq!(frame1_patch.height, sf_h, "source patch height must match subframe height");
-    assert_eq!(frame1_patch.left, sf_left, "source patch left offset must be preserved");
-    assert_eq!(frame1_patch.top, sf_top, "source patch top offset must be preserved");
+    assert_eq!(
+        frame1_patch.width, sf_w,
+        "source patch width must match subframe width"
+    );
+    assert_eq!(
+        frame1_patch.height, sf_h,
+        "source patch height must match subframe height"
+    );
+    assert_eq!(
+        frame1_patch.left, sf_left,
+        "source patch left offset must be preserved"
+    );
+    assert_eq!(
+        frame1_patch.top, sf_top,
+        "source patch top offset must be preserved"
+    );
     assert_eq!(
         frame1_patch.pixels.len(),
         (sf_w as usize) * (sf_h as usize) * 4,
@@ -667,10 +781,34 @@ fn test_adaptive_mixed_disposal_canvases_preserved() {
     let h = 20u16;
 
     let frames = vec![
-        make_frame(solid_canvas(w, h, 200, 50, 50), w, h, DisposalMethod::Keep, 100),
-        make_frame(solid_canvas(w, h, 50, 50, 200), w, h, DisposalMethod::Background, 100),
-        make_frame(solid_canvas(w, h, 50, 200, 50), w, h, DisposalMethod::Previous, 100),
-        make_frame(solid_canvas(w, h, 200, 200, 50), w, h, DisposalMethod::Keep, 100),
+        make_frame(
+            solid_canvas(w, h, 200, 50, 50),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 50, 50, 200),
+            w,
+            h,
+            DisposalMethod::Background,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 50, 200, 50),
+            w,
+            h,
+            DisposalMethod::Previous,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 200, 200, 50),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
     ];
     let gif = make_gif(w, h, frames);
 
@@ -691,7 +829,11 @@ fn test_adaptive_mixed_disposal_canvases_preserved() {
             );
         }
         Ok((_decision, decoded)) => {
-            assert_eq!(decoded.frames.len(), 4, "mixed-disposal: frame count must be 4");
+            assert_eq!(
+                decoded.frames.len(),
+                4,
+                "mixed-disposal: frame count must be 4"
+            );
             let canvases = displayed_canvases(&decoded);
             for i in 0..4 {
                 assert_canvas_equivalent(
@@ -717,9 +859,27 @@ fn test_adaptive_fallback_path_preserves_canonical_canvases() {
     let h = 20u16;
 
     let frames = vec![
-        make_frame(solid_canvas(w, h, 200, 50, 50), w, h, DisposalMethod::Keep, 100),
-        make_frame(solid_canvas(w, h, 50, 50, 200), w, h, DisposalMethod::Background, 100),
-        make_frame(solid_canvas(w, h, 50, 200, 50), w, h, DisposalMethod::Keep, 100),
+        make_frame(
+            solid_canvas(w, h, 200, 50, 50),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 50, 50, 200),
+            w,
+            h,
+            DisposalMethod::Background,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 50, 200, 50),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
     ];
     let gif = make_gif(w, h, frames);
 
@@ -770,9 +930,21 @@ fn test_adaptive_frame_count_and_geometry_invariants() {
         DisposalMethod::Previous,
     ] {
         let frames = vec![
-            make_frame(solid_canvas(w, h, 200, 50, 50), w, h, DisposalMethod::Keep, 100),
+            make_frame(
+                solid_canvas(w, h, 200, 50, 50),
+                w,
+                h,
+                DisposalMethod::Keep,
+                100,
+            ),
             make_frame(solid_canvas(w, h, 50, 50, 200), w, h, dispose, 100),
-            make_frame(solid_canvas(w, h, 50, 200, 50), w, h, DisposalMethod::Keep, 100),
+            make_frame(
+                solid_canvas(w, h, 50, 200, 50),
+                w,
+                h,
+                DisposalMethod::Keep,
+                100,
+            ),
         ];
         let gif = make_gif(w, h, frames);
 
@@ -785,7 +957,10 @@ fn test_adaptive_frame_count_and_geometry_invariants() {
             "disposal={dispose:?}: frame count must be 3"
         );
         assert_eq!(decoded.width, w, "disposal={dispose:?}: width must be {w}");
-        assert_eq!(decoded.height, h, "disposal={dispose:?}: height must be {h}");
+        assert_eq!(
+            decoded.height, h,
+            "disposal={dispose:?}: height must be {h}"
+        );
 
         for (i, frame) in decoded.frames.iter().enumerate() {
             assert_eq!(
@@ -808,9 +983,27 @@ fn test_adaptive_background_disposal_triggers_known_0x0_frame_bug() {
     let h = 16u16;
 
     let frames = vec![
-        make_frame(solid_canvas(w, h, 200, 50, 50), w, h, DisposalMethod::Keep, 100),
-        make_frame(solid_canvas(w, h, 50, 50, 200), w, h, DisposalMethod::Background, 100),
-        make_frame(solid_canvas(w, h, 50, 200, 50), w, h, DisposalMethod::Keep, 100),
+        make_frame(
+            solid_canvas(w, h, 200, 50, 50),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 50, 50, 200),
+            w,
+            h,
+            DisposalMethod::Background,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 50, 200, 50),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
     ];
     let gif = make_gif(w, h, frames);
 
@@ -824,13 +1017,15 @@ fn test_adaptive_background_disposal_triggers_known_0x0_frame_bug() {
                 e.contains("odd-sized buffer") || e.contains("0x0"),
                 "unexpected decode error (expected 0x0 frame bug): {e}"
             );
-            panic!(
-                "KNOWN BUG rusticle-uz5: Background disposal causes 0x0 frame emission — {e}"
-            );
+            panic!("KNOWN BUG rusticle-uz5: Background disposal causes 0x0 frame emission — {e}");
         }
         Ok((_decision, decoded)) => {
             // Bug is fixed: verify geometry.
-            assert_eq!(decoded.frames.len(), 3, "frame count must be 3 after bug fix");
+            assert_eq!(
+                decoded.frames.len(),
+                3,
+                "frame count must be 3 after bug fix"
+            );
             assert_eq!(decoded.width, w);
             assert_eq!(decoded.height, h);
         }
@@ -851,11 +1046,20 @@ fn test_adaptive_delay_preserved_through_round_trip() {
     let delays_ms = [100u64, 200, 50, 300];
     let frames: Vec<Frame> = delays_ms
         .iter()
-        .map(|&d| make_frame(solid_canvas(w, h, 100, 100, 100), w, h, DisposalMethod::Keep, d))
+        .map(|&d| {
+            make_frame(
+                solid_canvas(w, h, 100, 100, 100),
+                w,
+                h,
+                DisposalMethod::Keep,
+                d,
+            )
+        })
         .collect();
     let gif = make_gif(w, h, frames);
 
-    let (_decision, decoded) = adaptive_round_trip(&gif).expect("delay-preservation round-trip must succeed");
+    let (_decision, decoded) =
+        adaptive_round_trip(&gif).expect("delay-preservation round-trip must succeed");
 
     assert_eq!(decoded.frames.len(), delays_ms.len());
     for (i, (&expected_ms, frame)) in delays_ms.iter().zip(decoded.frames.iter()).enumerate() {
@@ -879,9 +1083,27 @@ fn test_adaptive_output_size_not_catastrophically_larger() {
     let h = 32u16;
 
     let frames = vec![
-        make_frame(solid_canvas(w, h, 200, 50, 50), w, h, DisposalMethod::Keep, 100),
-        make_frame(solid_canvas(w, h, 50, 50, 200), w, h, DisposalMethod::Keep, 100),
-        make_frame(solid_canvas(w, h, 50, 200, 50), w, h, DisposalMethod::Keep, 100),
+        make_frame(
+            solid_canvas(w, h, 200, 50, 50),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 50, 50, 200),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 50, 200, 50),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
     ];
     let gif = make_gif(w, h, frames);
 
@@ -891,7 +1113,9 @@ fn test_adaptive_output_size_not_catastrophically_larger() {
         enabled: true,
         emit_telemetry: false,
     };
-    let (_decision, adaptive_bytes) = gif.encode_adaptive(&config).expect("encode_adaptive must not fail");
+    let (_decision, adaptive_bytes) = gif
+        .encode_adaptive(&config)
+        .expect("encode_adaptive must not fail");
 
     // Adaptive output must not be more than 2× the default output.
     let ratio = adaptive_bytes.len() as f64 / default_bytes.len() as f64;
@@ -915,10 +1139,34 @@ fn test_canonical_ir_invariant_pre_draw_post_disposal_chain() {
     let h = 16u16;
 
     let frames = vec![
-        make_frame(solid_canvas(w, h, 200, 50, 50), w, h, DisposalMethod::Keep, 100),
-        make_frame(solid_canvas(w, h, 50, 50, 200), w, h, DisposalMethod::Background, 100),
-        make_frame(solid_canvas(w, h, 50, 200, 50), w, h, DisposalMethod::Previous, 100),
-        make_frame(solid_canvas(w, h, 200, 200, 50), w, h, DisposalMethod::Keep, 100),
+        make_frame(
+            solid_canvas(w, h, 200, 50, 50),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 50, 50, 200),
+            w,
+            h,
+            DisposalMethod::Background,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 50, 200, 50),
+            w,
+            h,
+            DisposalMethod::Previous,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 200, 200, 50),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
     ];
     let gif = make_gif(w, h, frames);
 
@@ -941,16 +1189,28 @@ fn test_canonical_ir_invariant_pre_draw_post_disposal_chain() {
 
 #[test]
 fn test_materialize_minimal_noop_background_disposal_produces_valid_frame() {
-    use rusticle::{Materializer, candidate_gen::CandidateRepresentation};
-    use rusticle::scoring::{FrameDecision, DecisionReason, ScoreBreakdown};
     use rusticle::palette_strategy::PaletteStrategy;
+    use rusticle::scoring::{DecisionReason, FrameDecision, ScoreBreakdown};
+    use rusticle::{candidate_gen::CandidateRepresentation, Materializer};
 
     let w = 20u16;
     let h = 20u16;
 
     let frames = vec![
-        make_frame(solid_canvas(w, h, 200, 50, 50), w, h, DisposalMethod::Keep, 100),
-        make_frame(solid_canvas(w, h, 50, 50, 200), w, h, DisposalMethod::Background, 100),
+        make_frame(
+            solid_canvas(w, h, 200, 50, 50),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 50, 50, 200),
+            w,
+            h,
+            DisposalMethod::Background,
+            100,
+        ),
     ];
     let gif = make_gif(w, h, frames);
 
@@ -1003,7 +1263,8 @@ fn test_materialize_minimal_noop_background_disposal_produces_valid_frame() {
         materialized.width, materialized.height
     );
     assert_eq!(
-        materialized.pixels.len(), 4,
+        materialized.pixels.len(),
+        4,
         "1x1 RGBA frame must have exactly 4 bytes (got {})",
         materialized.pixels.len()
     );

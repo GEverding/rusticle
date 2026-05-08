@@ -231,7 +231,11 @@ fn extract_metrics(seq: &CanonicalSequence) -> SequenceMetrics {
     let total_pixels = (seq.width as usize) * (seq.height as usize);
 
     let avg_delay_ms = if frame_count > 0 {
-        seq.frames.iter().map(|f| f.delay.as_millis() as f32).sum::<f32>() / frame_count as f32
+        seq.frames
+            .iter()
+            .map(|f| f.delay.as_millis() as f32)
+            .sum::<f32>()
+            / frame_count as f32
     } else {
         0.0
     };
@@ -293,8 +297,8 @@ fn extract_transparency_analysis(seq: &CanonicalSequence) -> TransparencyAnalysi
                 > 0
             {
                 frame.source_patch.transparent_pixel_count as f32
-                    / (frame.source_patch.opaque_pixel_count + frame.source_patch.transparent_pixel_count)
-                        as f32
+                    / (frame.source_patch.opaque_pixel_count
+                        + frame.source_patch.transparent_pixel_count) as f32
             } else {
                 0.0
             };
@@ -472,7 +476,8 @@ fn extract_delta_signal(seq: &CanonicalSequence) -> DeltaSignal {
         0.0
     };
 
-    let is_already_delta_encoded = offset_sparse_frames as f32 / seq.frames.len().max(1) as f32 > 0.5
+    let is_already_delta_encoded = offset_sparse_frames as f32 / seq.frames.len().max(1) as f32
+        > 0.5
         && opaque_delta_frames as f32 / seq.frames.len().max(1) as f32 > 0.5;
 
     DeltaSignal {
@@ -501,12 +506,10 @@ fn classify_taxonomy(
     // Rule 2: Opaque delta with global palette (Voyager-like)
     // Key signals: mostly opaque frames, no transparency, stable palette
     let opaque_ratio = delta.opaque_delta_frames as f32 / metrics.frame_count.max(1) as f32;
-    let transparency_ratio = transparency.frames_with_transparency as f32 / metrics.frame_count.max(1) as f32;
-    
-    if opaque_ratio >= 0.5
-        && transparency_ratio < 0.33
-        && palette.palette_stability > 0.7
-    {
+    let transparency_ratio =
+        transparency.frames_with_transparency as f32 / metrics.frame_count.max(1) as f32;
+
+    if opaque_ratio >= 0.5 && transparency_ratio < 0.33 && palette.palette_stability > 0.7 {
         return SequenceTaxonomy::OpaqueDeltaGlobalPalette;
     }
 
@@ -728,12 +731,30 @@ mod tests {
 
         // Debug output
         eprintln!("Opaque delta profile:");
-        eprintln!("  delta_signal.opaque_delta_frames: {}", profile.delta_signal.opaque_delta_frames);
-        eprintln!("  transparency.frames_with_transparency: {}", profile.transparency_analysis.frames_with_transparency);
-        eprintln!("  palette.palette_stability: {}", profile.palette_info.palette_stability);
-        eprintln!("  changes.avg_changed_ratio: {}", profile.change_statistics.avg_changed_ratio);
-        eprintln!("  changes.dense_change_frames: {}", profile.change_statistics.dense_change_frames);
-        eprintln!("  patches.avg_patch_density: {}", profile.patch_density.avg_patch_density);
+        eprintln!(
+            "  delta_signal.opaque_delta_frames: {}",
+            profile.delta_signal.opaque_delta_frames
+        );
+        eprintln!(
+            "  transparency.frames_with_transparency: {}",
+            profile.transparency_analysis.frames_with_transparency
+        );
+        eprintln!(
+            "  palette.palette_stability: {}",
+            profile.palette_info.palette_stability
+        );
+        eprintln!(
+            "  changes.avg_changed_ratio: {}",
+            profile.change_statistics.avg_changed_ratio
+        );
+        eprintln!(
+            "  changes.dense_change_frames: {}",
+            profile.change_statistics.dense_change_frames
+        );
+        eprintln!(
+            "  patches.avg_patch_density: {}",
+            profile.patch_density.avg_patch_density
+        );
         eprintln!("  taxonomy: {:?}", profile.taxonomy);
 
         // Should classify as opaque delta
@@ -753,13 +774,22 @@ mod tests {
 
         // Debug output
         eprintln!("Disposal background profile:");
-        eprintln!("  disposal.background_count: {}", profile.disposal_distribution.background_count);
-        eprintln!("  disposal.previous_count: {}", profile.disposal_distribution.previous_count);
+        eprintln!(
+            "  disposal.background_count: {}",
+            profile.disposal_distribution.background_count
+        );
+        eprintln!(
+            "  disposal.previous_count: {}",
+            profile.disposal_distribution.previous_count
+        );
         eprintln!("  frame_count: {}", profile.metrics.frame_count);
         eprintln!("  taxonomy: {:?}", profile.taxonomy);
 
         // Should classify as disposal-heavy
-        assert_eq!(profile.taxonomy, SequenceTaxonomy::DisposalHeavyBackgroundPrevious);
+        assert_eq!(
+            profile.taxonomy,
+            SequenceTaxonomy::DisposalHeavyBackgroundPrevious
+        );
 
         // Verify disposal distribution
         assert_eq!(profile.disposal_distribution.background_count, 1);
@@ -773,7 +803,10 @@ mod tests {
         assert_eq!(profile.metrics.frame_count, 2);
 
         // Should classify as transparency-heavy sparse delta
-        assert_eq!(profile.taxonomy, SequenceTaxonomy::TransparencyHeavySparseDelta);
+        assert_eq!(
+            profile.taxonomy,
+            SequenceTaxonomy::TransparencyHeavySparseDelta
+        );
 
         // Verify transparency analysis
         assert!(profile.transparency_analysis.frames_with_transparency > 0);
@@ -782,7 +815,10 @@ mod tests {
 
     #[test]
     fn test_taxonomy_name() {
-        assert_eq!(SequenceTaxonomy::OpaqueDeltaGlobalPalette.name(), "opaque-delta/global-palette");
+        assert_eq!(
+            SequenceTaxonomy::OpaqueDeltaGlobalPalette.name(),
+            "opaque-delta/global-palette"
+        );
         assert_eq!(
             SequenceTaxonomy::TransparencyHeavySparseDelta.name(),
             "transparency-heavy/sparse-delta"

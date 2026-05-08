@@ -146,11 +146,7 @@ fn compute_quality_metrics(
 pub fn encode_rusticle_default(data: &[u8]) -> Option<(Vec<u8>, f64)> {
     let start = Instant::now();
     let gif = Gif::from_bytes(data).ok()?;
-    let output = gif
-        .optimize(OptLevel::O3)
-        .lossy(80)
-        .to_bytes()
-        .ok()?;
+    let output = gif.optimize(OptLevel::O3).lossy(80).to_bytes().ok()?;
     let runtime_ms = start.elapsed().as_secs_f64() * 1000.0;
     Some((output, runtime_ms))
 }
@@ -163,23 +159,23 @@ pub fn encode_rusticle_adaptive(data: &[u8]) -> Option<(Vec<u8>, f64, bool, Opti
         emit_telemetry: false,
     };
     let (decision, output) = gif.encode_adaptive(&config).ok()?;
-    
+
     // Decode the adaptive output and apply the same optimizations as default path
     let adaptive_gif = Gif::from_bytes(&output).ok()?;
-    let optimized = adaptive_gif
-        .optimize(OptLevel::O3)
-        .lossy(80);
+    let optimized = adaptive_gif.optimize(OptLevel::O3).lossy(80);
     let final_output = optimized.to_bytes().ok()?;
-    
+
     let runtime_ms = start.elapsed().as_secs_f64() * 1000.0;
-    Some((final_output, runtime_ms, decision.success, decision.fallback_reason))
+    Some((
+        final_output,
+        runtime_ms,
+        decision.success,
+        decision.fallback_reason,
+    ))
 }
 
 pub fn encode_gifsicle(path: &Path) -> Option<(Vec<u8>, f64)> {
-    let out_name = format!(
-        "adaptive_bench_{}_gifsicle.gif",
-        std::process::id()
-    );
+    let out_name = format!("adaptive_bench_{}_gifsicle.gif", std::process::id());
     let out_path = std::env::temp_dir().join(out_name);
 
     let start = Instant::now();
@@ -201,10 +197,7 @@ pub fn encode_gifsicle(path: &Path) -> Option<(Vec<u8>, f64)> {
     Some((output, runtime_ms))
 }
 
-pub fn compare_file(
-    path: &Path,
-    category: &str,
-) -> Option<ComparisonResult> {
+pub fn compare_file(path: &Path, category: &str) -> Option<ComparisonResult> {
     let file_name = path.file_name()?.to_string_lossy().to_string();
     let file_path = path.to_string_lossy().to_string();
     let data = fs::read(path).ok()?;
@@ -423,44 +416,89 @@ pub fn compute_aggregate_metrics(results: &[ComparisonResult]) -> AggregateMetri
         }
     }
 
-    let avg = |v: &[f64]| if v.is_empty() { 0.0 } else { v.iter().sum::<f64>() / v.len() as f64 };
+    let avg = |v: &[f64]| {
+        if v.is_empty() {
+            0.0
+        } else {
+            v.iter().sum::<f64>() / v.len() as f64
+        }
+    };
     let min = |v: &[f64]| v.iter().cloned().fold(f64::INFINITY, f64::min);
 
     AggregateMetrics {
         gifsicle_baseline: ProfileAggregate {
             avg_output_bytes: avg(&gifsicle_bytes),
-            avg_compression_ratio: avg(&gifsicle_bytes) / avg(&[results.iter().map(|r| r.input_bytes as f64).sum::<f64>() / results.len() as f64]),
+            avg_compression_ratio: avg(&gifsicle_bytes)
+                / avg(&[results.iter().map(|r| r.input_bytes as f64).sum::<f64>()
+                    / results.len() as f64]),
             avg_psnr: avg(&gifsicle_psnr),
             avg_ssim: avg(&gifsicle_ssim),
             worst_psnr: min(&gifsicle_worst_psnr),
             worst_ssim: min(&gifsicle_worst_ssim),
-            avg_butteraugli: if gifsicle_ba.is_empty() { None } else { Some(avg(&gifsicle_ba)) },
-            worst_butteraugli: if gifsicle_worst_ba.is_empty() { None } else { Some(gifsicle_worst_ba.iter().cloned().fold(0.0, f64::max)) },
+            avg_butteraugli: if gifsicle_ba.is_empty() {
+                None
+            } else {
+                Some(avg(&gifsicle_ba))
+            },
+            worst_butteraugli: if gifsicle_worst_ba.is_empty() {
+                None
+            } else {
+                Some(gifsicle_worst_ba.iter().cloned().fold(0.0, f64::max))
+            },
             avg_runtime_ms: avg(&gifsicle_runtime),
         },
         rusticle_default: ProfileAggregate {
             avg_output_bytes: avg(&rusticle_default_bytes),
-            avg_compression_ratio: avg(&rusticle_default_bytes) / avg(&[results.iter().map(|r| r.input_bytes as f64).sum::<f64>() / results.len() as f64]),
+            avg_compression_ratio: avg(&rusticle_default_bytes)
+                / avg(&[results.iter().map(|r| r.input_bytes as f64).sum::<f64>()
+                    / results.len() as f64]),
             avg_psnr: avg(&rusticle_default_psnr),
             avg_ssim: avg(&rusticle_default_ssim),
             worst_psnr: min(&rusticle_default_worst_psnr),
             worst_ssim: min(&rusticle_default_worst_ssim),
-            avg_butteraugli: if rusticle_default_ba.is_empty() { None } else { Some(avg(&rusticle_default_ba)) },
-            worst_butteraugli: if rusticle_default_worst_ba.is_empty() { None } else { Some(rusticle_default_worst_ba.iter().cloned().fold(0.0, f64::max)) },
+            avg_butteraugli: if rusticle_default_ba.is_empty() {
+                None
+            } else {
+                Some(avg(&rusticle_default_ba))
+            },
+            worst_butteraugli: if rusticle_default_worst_ba.is_empty() {
+                None
+            } else {
+                Some(
+                    rusticle_default_worst_ba
+                        .iter()
+                        .cloned()
+                        .fold(0.0, f64::max),
+                )
+            },
             avg_runtime_ms: avg(&rusticle_default_runtime),
         },
         rusticle_adaptive_bytes: ProfileAggregate {
             avg_output_bytes: avg(&adaptive_bytes),
-            avg_compression_ratio: avg(&adaptive_bytes) / avg(&[results.iter().map(|r| r.input_bytes as f64).sum::<f64>() / results.len() as f64]),
+            avg_compression_ratio: avg(&adaptive_bytes)
+                / avg(&[results.iter().map(|r| r.input_bytes as f64).sum::<f64>()
+                    / results.len() as f64]),
             avg_psnr: avg(&adaptive_psnr),
             avg_ssim: avg(&adaptive_ssim),
             worst_psnr: min(&adaptive_worst_psnr),
             worst_ssim: min(&adaptive_worst_ssim),
-            avg_butteraugli: if adaptive_ba.is_empty() { None } else { Some(avg(&adaptive_ba)) },
-            worst_butteraugli: if adaptive_worst_ba.is_empty() { None } else { Some(adaptive_worst_ba.iter().cloned().fold(0.0, f64::max)) },
+            avg_butteraugli: if adaptive_ba.is_empty() {
+                None
+            } else {
+                Some(avg(&adaptive_ba))
+            },
+            worst_butteraugli: if adaptive_worst_ba.is_empty() {
+                None
+            } else {
+                Some(adaptive_worst_ba.iter().cloned().fold(0.0, f64::max))
+            },
             avg_runtime_ms: avg(&adaptive_runtime),
         },
         adaptive_fallback_count,
-        adaptive_fallback_rate: if results.is_empty() { 0.0 } else { adaptive_fallback_count as f64 / results.len() as f64 },
+        adaptive_fallback_rate: if results.is_empty() {
+            0.0
+        } else {
+            adaptive_fallback_count as f64 / results.len() as f64
+        },
     }
 }

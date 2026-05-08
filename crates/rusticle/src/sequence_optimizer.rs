@@ -63,7 +63,7 @@ use crate::candidate_gen::Candidate;
 use crate::lut_policy::candidate_to_family;
 use crate::palette_strategy::PaletteStrategy;
 use crate::profiler::GifProfile;
-use crate::scoring::{FrameDecision, Scorer, SequenceDecision, DecisionReason};
+use crate::scoring::{DecisionReason, FrameDecision, Scorer, SequenceDecision};
 
 /// Configuration for sequence-level DP-lite optimization.
 #[derive(Debug, Clone)]
@@ -117,12 +117,7 @@ impl DpState {
     }
 
     /// Extend this state with a new frame decision.
-    fn extend(
-        &self,
-        frame_idx: usize,
-        decision: FrameDecision,
-        transition_cost: f32,
-    ) -> Self {
+    fn extend(&self, frame_idx: usize, decision: FrameDecision, transition_cost: f32) -> Self {
         let mut new_state = self.clone();
         new_state.frame_idx = frame_idx;
         new_state.accumulated_cost += decision.score_breakdown.total_score + transition_cost;
@@ -159,19 +154,17 @@ impl SequenceOptimizer {
         // Optimize each chunk independently
         let mut all_decisions = Vec::new();
         for chunk in chunks {
-            let chunk_decisions = Self::optimize_chunk(
-                &chunk,
-                all_candidates,
-                seq,
-                profile,
-                config,
-            );
+            let chunk_decisions =
+                Self::optimize_chunk(&chunk, all_candidates, seq, profile, config);
             all_decisions.extend(chunk_decisions);
         }
 
         // Compute summary statistics
         let avg_score = if !all_decisions.is_empty() {
-            all_decisions.iter().map(|d| d.score_breakdown.total_score).sum::<f32>()
+            all_decisions
+                .iter()
+                .map(|d| d.score_breakdown.total_score)
+                .sum::<f32>()
                 / all_decisions.len() as f32
         } else {
             0.0
@@ -201,12 +194,16 @@ impl SequenceOptimizer {
     /// Detect chunk boundaries in the sequence.
     ///
     /// Returns a list of frame index ranges, one per chunk.
-    fn detect_chunks(seq: &CanonicalSequence, config: &SequenceOptimizerConfig) -> Vec<(usize, usize)> {
+    fn detect_chunks(
+        seq: &CanonicalSequence,
+        config: &SequenceOptimizerConfig,
+    ) -> Vec<(usize, usize)> {
         let mut chunks = Vec::new();
         let mut chunk_start = 0;
 
         for (i, frame) in seq.frames.iter().enumerate() {
-            let is_scene_change = frame.changed_region.changed_ratio > config.scene_change_threshold;
+            let is_scene_change =
+                frame.changed_region.changed_ratio > config.scene_change_threshold;
 
             if is_scene_change && i > chunk_start {
                 // End current chunk at scene change
@@ -256,7 +253,6 @@ impl SequenceOptimizer {
             .enumerate()
             .map(|(i, (f, c))| (chunk_start + i, (f, c)))
         {
-
             let mut next_beam = Vec::new();
 
             // For each state in current beam
@@ -267,8 +263,8 @@ impl SequenceOptimizer {
                     let score = Scorer::score_candidate(candidate, frame, seq, profile);
 
                     // Compute transition cost
-                    let is_lut_preserving = candidate_to_family(&candidate.representation)
-                        .is_lut_preserving();
+                    let is_lut_preserving =
+                        candidate_to_family(&candidate.representation).is_lut_preserving();
                     let transition_cost = Self::compute_transition_cost(
                         state.prev_lut_preserving,
                         is_lut_preserving,
@@ -333,9 +329,10 @@ impl SequenceOptimizer {
         for frame_idx in chunk_start..chunk_end {
             if let Some(candidates) = all_candidates.get(frame_idx) {
                 // Check if any candidate is LUT-preserving
-                if candidates.iter().any(|c| {
-                    candidate_to_family(&c.representation).is_lut_preserving()
-                }) {
+                if candidates
+                    .iter()
+                    .any(|c| candidate_to_family(&c.representation).is_lut_preserving())
+                {
                     lut_preserving_count += 1;
                 }
             }
@@ -360,9 +357,9 @@ impl SequenceOptimizer {
         config: &SequenceOptimizerConfig,
     ) -> f32 {
         match (prev_lut_preserving, curr_lut_preserving) {
-            (true, false) => config.lut_break_cost,  // Breaking LUT: penalty
-            (false, true) => config.lut_break_cost,  // Restoring LUT: penalty
-            _ => 0.0,                                 // No transition cost
+            (true, false) => config.lut_break_cost, // Breaking LUT: penalty
+            (false, true) => config.lut_break_cost, // Restoring LUT: penalty
+            _ => 0.0,                               // No transition cost
         }
     }
 }
@@ -370,11 +367,15 @@ impl SequenceOptimizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adaptive_ir::{BoundingBox, Canvas, CanonicalFrame, CanonicalSequence, ChangedRegion, SourcePatch};
-    use crate::candidate_gen::{Candidate, CandidateMetadata, CandidateRepresentation, SafetyReason};
+    use crate::adaptive_ir::{
+        BoundingBox, CanonicalFrame, CanonicalSequence, Canvas, ChangedRegion, SourcePatch,
+    };
+    use crate::candidate_gen::{
+        Candidate, CandidateMetadata, CandidateRepresentation, SafetyReason,
+    };
     use crate::profiler::{
-        GifProfile, SequenceTaxonomy, PaletteInfo, ChangeStatistics, SequenceMetrics,
-        DisposalDistribution, TransparencyAnalysis, PatchDensity, DeltaSignal,
+        ChangeStatistics, DeltaSignal, DisposalDistribution, GifProfile, PaletteInfo, PatchDensity,
+        SequenceMetrics, SequenceTaxonomy, TransparencyAnalysis,
     };
     use crate::types::DisposalMethod;
     use std::time::Duration;
@@ -530,9 +531,8 @@ mod tests {
         let profile = create_test_profile();
         let config = SequenceOptimizerConfig::default();
 
-        let all_candidates: Vec<Vec<Candidate>> = (0..24)
-            .map(|i| create_test_candidates(i, 2))
-            .collect();
+        let all_candidates: Vec<Vec<Candidate>> =
+            (0..24).map(|i| create_test_candidates(i, 2)).collect();
 
         let decision = SequenceOptimizer::optimize(&all_candidates, &seq, &profile, &config);
 
@@ -555,9 +555,8 @@ mod tests {
         let profile = create_test_profile();
         let config = SequenceOptimizerConfig::default();
 
-        let all_candidates: Vec<Vec<Candidate>> = (0..20)
-            .map(|i| create_test_candidates(i, 2))
-            .collect();
+        let all_candidates: Vec<Vec<Candidate>> =
+            (0..20).map(|i| create_test_candidates(i, 2)).collect();
 
         let decision = SequenceOptimizer::optimize(&all_candidates, &seq, &profile, &config);
 
@@ -572,19 +571,28 @@ mod tests {
         let profile = create_test_profile();
         let config = SequenceOptimizerConfig::default();
 
-        let all_candidates: Vec<Vec<Candidate>> = (0..12)
-            .map(|i| create_test_candidates(i, 2))
-            .collect();
+        let all_candidates: Vec<Vec<Candidate>> =
+            (0..12).map(|i| create_test_candidates(i, 2)).collect();
 
         let decision1 = SequenceOptimizer::optimize(&all_candidates, &seq, &profile, &config);
         let decision2 = SequenceOptimizer::optimize(&all_candidates, &seq, &profile, &config);
 
         // Scores should be identical
         assert_eq!(decision1.avg_score, decision2.avg_score);
-        assert_eq!(decision1.frame_decisions.len(), decision2.frame_decisions.len());
+        assert_eq!(
+            decision1.frame_decisions.len(),
+            decision2.frame_decisions.len()
+        );
 
-        for (d1, d2) in decision1.frame_decisions.iter().zip(decision2.frame_decisions.iter()) {
-            assert_eq!(d1.score_breakdown.total_score, d2.score_breakdown.total_score);
+        for (d1, d2) in decision1
+            .frame_decisions
+            .iter()
+            .zip(decision2.frame_decisions.iter())
+        {
+            assert_eq!(
+                d1.score_breakdown.total_score,
+                d2.score_breakdown.total_score
+            );
         }
     }
 
@@ -598,9 +606,8 @@ mod tests {
             ..Default::default()
         };
 
-        let all_candidates: Vec<Vec<Candidate>> = (0..12)
-            .map(|i| create_test_candidates(i, 3))
-            .collect();
+        let all_candidates: Vec<Vec<Candidate>> =
+            (0..12).map(|i| create_test_candidates(i, 3)).collect();
 
         let decision = SequenceOptimizer::optimize(&all_candidates, &seq, &profile, &config);
 
@@ -618,9 +625,8 @@ mod tests {
             ..Default::default()
         };
 
-        let all_candidates: Vec<Vec<Candidate>> = (0..30)
-            .map(|i| create_test_candidates(i, 2))
-            .collect();
+        let all_candidates: Vec<Vec<Candidate>> =
+            (0..30).map(|i| create_test_candidates(i, 2)).collect();
 
         let decision = SequenceOptimizer::optimize(&all_candidates, &seq, &profile, &config);
 
@@ -638,9 +644,8 @@ mod tests {
 
         // Create candidates where frame 0-5 prefer OpaqueBbox, frame 6-11 prefer FullFrame
         // but with transition costs, DP-lite should prefer a consistent path
-        let all_candidates: Vec<Vec<Candidate>> = (0..12)
-            .map(|i| create_test_candidates(i, 2))
-            .collect();
+        let all_candidates: Vec<Vec<Candidate>> =
+            (0..12).map(|i| create_test_candidates(i, 2)).collect();
 
         let decision = SequenceOptimizer::optimize(&all_candidates, &seq, &profile, &config);
 

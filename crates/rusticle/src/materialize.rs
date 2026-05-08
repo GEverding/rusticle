@@ -73,18 +73,14 @@ impl Materializer {
         seq: &CanonicalSequence,
     ) -> Result<Frame> {
         match &decision.chosen_candidate {
-            CandidateRepresentation::FullFrame => {
-                Self::materialize_full_frame(frame, seq)
-            }
+            CandidateRepresentation::FullFrame => Self::materialize_full_frame(frame, seq),
             CandidateRepresentation::ExactOpaqueBbox { bbox } => {
                 Self::materialize_opaque_bbox(frame, seq, *bbox)
             }
             CandidateRepresentation::TransparentSparsePatch { bbox, .. } => {
                 Self::materialize_transparent_sparse(frame, seq, *bbox)
             }
-            CandidateRepresentation::MinimalNoOp => {
-                Self::materialize_minimal_noop(frame, seq)
-            }
+            CandidateRepresentation::MinimalNoOp => Self::materialize_minimal_noop(frame, seq),
         }
     }
 
@@ -150,7 +146,9 @@ impl Materializer {
             for x in bbox.left..bbox.right {
                 let canvas_idx = ((y as usize) * (seq.width as usize) + (x as usize)) * 4;
                 if canvas_idx + 4 <= frame.displayed_canvas.pixels.len() {
-                    pixels.extend_from_slice(&frame.displayed_canvas.pixels[canvas_idx..canvas_idx + 4]);
+                    pixels.extend_from_slice(
+                        &frame.displayed_canvas.pixels[canvas_idx..canvas_idx + 4],
+                    );
                 } else {
                     // Out of bounds: fill with transparent black
                     pixels.extend_from_slice(&[0, 0, 0, 0]);
@@ -215,7 +213,9 @@ impl Materializer {
             for x in bbox.left..bbox.right {
                 let canvas_idx = ((y as usize) * (seq.width as usize) + (x as usize)) * 4;
                 if canvas_idx + 4 <= frame.displayed_canvas.pixels.len() {
-                    pixels.extend_from_slice(&frame.displayed_canvas.pixels[canvas_idx..canvas_idx + 4]);
+                    pixels.extend_from_slice(
+                        &frame.displayed_canvas.pixels[canvas_idx..canvas_idx + 4],
+                    );
                 } else {
                     // Out of bounds: fill with transparent black
                     pixels.extend_from_slice(&[0, 0, 0, 0]);
@@ -295,10 +295,11 @@ impl Materializer {
         for decision in decisions {
             let frame_idx = decision.frame_index;
             if frame_idx >= seq.frames.len() {
-                return Err(crate::error::Error::EncodeError(
-                    format!("Frame index {} out of bounds (sequence has {} frames)",
-                        frame_idx, seq.frames.len())
-                ));
+                return Err(crate::error::Error::EncodeError(format!(
+                    "Frame index {} out of bounds (sequence has {} frames)",
+                    frame_idx,
+                    seq.frames.len()
+                )));
             }
 
             let canonical_frame = &seq.frames[frame_idx];
@@ -327,9 +328,9 @@ mod tests {
             let mut pixels = vec![0u8; (width as usize) * (height as usize) * 4];
             // Fill with different colors per frame
             let color = [
-                (255, 0, 0, 255),     // Red
-                (0, 255, 0, 255),     // Green
-                (0, 0, 255, 255),     // Blue
+                (255, 0, 0, 255), // Red
+                (0, 255, 0, 255), // Green
+                (0, 0, 255, 255), // Blue
             ][i % 3];
 
             for chunk in pixels.chunks_exact_mut(4) {
@@ -377,7 +378,7 @@ mod tests {
         for y in 0..10 {
             for x in 0..10 {
                 let idx = ((center_y + y) * (width as usize) + (center_x + x)) * 4;
-                pixels[idx] = 255;     // Red
+                pixels[idx] = 255; // Red
                 pixels[idx + 1] = 0;
                 pixels[idx + 2] = 0;
                 pixels[idx + 3] = 255; // Opaque
@@ -402,8 +403,6 @@ mod tests {
             original_palette: None,
         }
     }
-
-
 
     #[test]
     fn test_materialize_full_frame() {
@@ -457,7 +456,7 @@ mod tests {
                 let canvas_x = (patch_left as usize) + x;
                 let canvas_y = (patch_top as usize) + y;
                 let idx = (canvas_y * 100 + canvas_x) * 4;
-                pixels[idx] = 255;     // Red
+                pixels[idx] = 255; // Red
                 pixels[idx + 1] = 0;
                 pixels[idx + 2] = 0;
                 pixels[idx + 3] = 255; // Opaque
@@ -488,7 +487,12 @@ mod tests {
         let _candidates = CandidateGenerator::generate(&seq);
 
         // Create a decision with a manually specified bbox
-        let bbox = BoundingBox::new(patch_left, patch_top, patch_left + patch_width, patch_top + patch_height);
+        let bbox = BoundingBox::new(
+            patch_left,
+            patch_top,
+            patch_left + patch_width,
+            patch_top + patch_height,
+        );
         let decision = FrameDecision {
             frame_index: 0,
             chosen_candidate: CandidateRepresentation::ExactOpaqueBbox { bbox },
@@ -509,7 +513,10 @@ mod tests {
         assert_eq!(materialized.top, bbox.top);
 
         // Pixel count should match bbox area
-        assert_eq!(materialized.pixels.len(), (bbox.width() as usize) * (bbox.height() as usize) * 4);
+        assert_eq!(
+            materialized.pixels.len(),
+            (bbox.width() as usize) * (bbox.height() as usize) * 4
+        );
 
         // Verify that the materialized pixels match the displayed canvas in the bbox region
         // (The displayed canvas should have the opaque patch)
@@ -518,7 +525,9 @@ mod tests {
             for x in bbox.left..bbox.right {
                 let canvas_idx = ((y as usize) * (seq.width as usize) + (x as usize)) * 4;
                 if canvas_idx + 4 <= seq.frames[0].displayed_canvas.pixels.len() {
-                    expected_pixels.extend_from_slice(&seq.frames[0].displayed_canvas.pixels[canvas_idx..canvas_idx + 4]);
+                    expected_pixels.extend_from_slice(
+                        &seq.frames[0].displayed_canvas.pixels[canvas_idx..canvas_idx + 4],
+                    );
                 } else {
                     expected_pixels.extend_from_slice(&[0, 0, 0, 0]);
                 }
@@ -537,7 +546,10 @@ mod tests {
 
         let decision = FrameDecision {
             frame_index: 0,
-            chosen_candidate: CandidateRepresentation::TransparentSparsePatch { bbox, is_risky: false },
+            chosen_candidate: CandidateRepresentation::TransparentSparsePatch {
+                bbox,
+                is_risky: false,
+            },
             chosen_palette_strategy: PaletteStrategy::DeriveSequenceGlobalPreferred,
             score_breakdown: ScoreBreakdown::zero(),
             alternatives: vec![],
@@ -555,7 +567,10 @@ mod tests {
         assert_eq!(materialized.top, bbox.top);
 
         // Pixel count should match bbox area
-        assert_eq!(materialized.pixels.len(), (bbox.width() as usize) * (bbox.height() as usize) * 4);
+        assert_eq!(
+            materialized.pixels.len(),
+            (bbox.width() as usize) * (bbox.height() as usize) * 4
+        );
     }
 
     #[test]
@@ -695,7 +710,7 @@ mod tests {
                 let canvas_x = (patch_left as usize) + x;
                 let canvas_y = (patch_top as usize) + y;
                 let idx = (canvas_y * 100 + canvas_x) * 4;
-                pixels[idx] = 255;     // Red
+                pixels[idx] = 255; // Red
                 pixels[idx + 1] = 0;
                 pixels[idx + 2] = 0;
                 pixels[idx + 3] = 255; // Opaque
@@ -723,7 +738,12 @@ mod tests {
         let seq = CanonicalSequenceBuilder::build(&gif).expect("Failed to build sequence");
 
         // Create a decision with a manually specified bbox
-        let bbox = BoundingBox::new(patch_left, patch_top, patch_left + patch_width, patch_top + patch_height);
+        let bbox = BoundingBox::new(
+            patch_left,
+            patch_top,
+            patch_left + patch_width,
+            patch_top + patch_height,
+        );
         let decision = FrameDecision {
             frame_index: 0,
             chosen_candidate: CandidateRepresentation::ExactOpaqueBbox { bbox },

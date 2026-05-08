@@ -193,6 +193,110 @@ fn quantize_to_palette(
     Ok((palette_rgb, indices, transparent_idx))
 }
 
+/// Map RGBA pixels to indices using a pre-computed palette (flat RGB).
+/// Uses simple nearest-neighbor color matching.
+fn map_rgba_to_palette(
+    rgba_pixels: &[u8],
+    palette_rgb: &[u8],
+) -> Vec<u8> {
+    let palette_colors: Vec<[u8; 3]> = palette_rgb
+        .chunks_exact(3)
+        .map(|chunk| [chunk[0], chunk[1], chunk[2]])
+        .collect();
+
+    rgba_pixels
+        .chunks_exact(4)
+        .map(|chunk| {
+            let r = chunk[0];
+            let g = chunk[1];
+            let b = chunk[2];
+
+            // Find nearest color in palette
+            let mut best_idx = 0u8;
+            let mut best_dist = u32::MAX;
+
+            for (idx, &[pr, pg, pb]) in palette_colors.iter().enumerate() {
+                let dr = (r as i32 - pr as i32).unsigned_abs();
+                let dg = (g as i32 - pg as i32).unsigned_abs();
+                let db = (b as i32 - pb as i32).unsigned_abs();
+                let dist = dr * dr + dg * dg + db * db;
+
+                if dist < best_dist {
+                    best_dist = dist;
+                    best_idx = idx as u8;
+                }
+            }
+
+            best_idx
+        })
+        .collect()
+}
+
+/// Helper to encode a GIF with bbox patches.
+/// Supports both global-palette mode (first frame sets global palette) and local-palette mode.
+fn encode_gif_with_bbox_patches(
+    width: u32,
+    height: u32,
+    frames_data: Vec<BboxFrameData>,
+    global_palette: Option<Vec<u8>>,
+    output_path: &Path,
+) -> Result<(), String> {
+    let mut buffer = Vec::new();
+    {
+        // If global palette is provided, use it for the encoder
+        let encoder_palette = global_palette.clone().unwrap_or_default();
+        let mut encoder = gif::Encoder::new(&mut buffer, width as u16, height as u16, &encoder_palette)
+            .map_err(|e| format!("gif encoder creation failed: {}", e))?;
+
+        encoder
+            .set_repeat(gif::Repeat::Infinite)
+            .map_err(|e| format!("set_repeat failed: {}", e))?;
+
+        for frame_data in frames_data {
+            let delay_ms = frame_data.delay.as_millis() as u16;
+            let delay_units = (delay_ms + 5) / 10;
+
+            let mut gif_frame = gif::Frame::from_indexed_pixels(
+                frame_data.width,
+                frame_data.height,
+                frame_data.indices,
+                frame_data.transparent_idx,
+            );
+
+            // Only set local palette if we're in local-palette mode (no global palette)
+            if global_palette.is_none() {
+                gif_frame.palette = Some(frame_data.palette);
+            }
+            
+            if let Some(idx) = frame_data.transparent_idx {
+                gif_frame.transparent = Some(idx);
+            }
+            gif_frame.delay = delay_units;
+            gif_frame.left = frame_data.left;
+            gif_frame.top = frame_data.top;
+
+            encoder
+                .write_frame(&gif_frame)
+                .map_err(|e| format!("write_frame failed: {}", e))?;
+        }
+    }
+
+    fs::write(output_path, &buffer).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Data for a single bbox frame to be encoded.
+struct BboxFrameData {
+    palette: Vec<u8>,
+    indices: Vec<u8>,
+    transparent_idx: Option<u8>,
+    delay: std::time::Duration,
+    width: u16,
+    height: u16,
+    left: u16,
+    top: u16,
+}
+
 /// Candidate 1: rusticle default path
 pub fn candidate_rusticle_default(
     input_path: &Path,
@@ -297,17 +401,27 @@ pub fn candidate_opaque_bbox_global(
         prev_canvas = canvas;
     }
 
-    // Compute bboxes and collect all patches
+    // Compute bboxes and collect all patches (including frame 0 as full canvas)
     let mut all_patches = Vec::new();
+    let mut bbox_info = Vec::new(); // (min_x, min_y, max_x, max_y, frame_idx)
     let mut total_patch_area = 0.0;
     let mut patch_count = 0;
 
+    // Frame 0: full canvas
+    let frame0_patch = displayed_frames[0].clone();
+    all_patches.push(frame0_patch);
+    bbox_info.push((0, 0, 160, 120, 0));
+    total_patch_area += (160 * 120) as f64;
+    patch_count += 1;
+
+    // Frames 1+: compute opaque bboxes
     for i in 1..displayed_frames.len() {
         if let Some((min_x, min_y, max_x, max_y)) =
             compute_opaque_bbox(&displayed_frames[i - 1], &displayed_frames[i], 160, 120)
         {
             let patch = extract_patch(&displayed_frames[i], 160, min_x, min_y, max_x, max_y);
             all_patches.push(patch);
+            bbox_info.push((min_x, min_y, max_x, max_y, i));
             let area = ((max_x - min_x) * (max_y - min_y)) as f64;
             total_patch_area += area;
             patch_count += 1;
@@ -320,7 +434,7 @@ pub fn candidate_opaque_bbox_global(
         0.0
     };
 
-    // Quantize all patches against a global palette
+    // Quantize all patches together to get a global palette
     let mut combined_rgba = Vec::new();
     for patch in &all_patches {
         combined_rgba.extend_from_slice(patch);
@@ -330,23 +444,40 @@ pub fn candidate_opaque_bbox_global(
         return Err("No patches to quantize".to_string());
     }
 
-    let (_palette_rgb, _indices, _transparent_idx) =
+    let (global_palette_rgb, _indices, _transparent_idx) =
         quantize_to_palette(&combined_rgba, 160, 120)?;
 
     let frame_count = resized.frames.len();
 
-    // For now, encode using rusticle's default encoder
-    // (Full implementation would use custom GIF encoder with bbox patches)
-    let bytes = resized
-        .optimize(OptLevel::O3)
-        .lossy(80)
-        .to_bytes()
-        .map_err(|e| e.to_string())?;
+    // Now encode with actual bbox patches using the global palette
+    let mut frames_data = Vec::new();
 
-    fs::write(output_path, &bytes).map_err(|e| e.to_string())?;
+    for (patch_idx, (min_x, min_y, max_x, max_y, frame_idx)) in bbox_info.iter().enumerate() {
+        let patch = &all_patches[patch_idx];
+        let patch_w = max_x - min_x;
+        let patch_h = max_y - min_y;
+
+        // Map this patch to the global palette
+        let indices = map_rgba_to_palette(patch, &global_palette_rgb);
+
+        frames_data.push(BboxFrameData {
+            palette: global_palette_rgb.clone(),
+            indices,
+            transparent_idx: None,
+            delay: resized.frames[*frame_idx].delay,
+            width: patch_w as u16,
+            height: patch_h as u16,
+            left: *min_x as u16,
+            top: *min_y as u16,
+        });
+    }
+
+    encode_gif_with_bbox_patches(160, 120, frames_data, Some(global_palette_rgb), output_path)?;
 
     let elapsed = start.elapsed();
-    let output_bytes = bytes.len() as u64;
+    let output_bytes = fs::metadata(output_path)
+        .map_err(|e| e.to_string())?
+        .len();
 
     Ok(CandidateMetrics {
         name: "opaque_bbox_global".to_string(),
@@ -385,14 +516,21 @@ pub fn candidate_opaque_bbox_local(
         prev_canvas = canvas;
     }
 
+    let mut bbox_info = Vec::new();
     let mut total_patch_area = 0.0;
     let mut patch_count = 0;
 
+    // Frame 0: full canvas
+    bbox_info.push((0, 0, 160, 120, 0));
+    total_patch_area += (160 * 120) as f64;
+    patch_count += 1;
+
+    // Frames 1+: compute opaque bboxes
     for i in 1..displayed_frames.len() {
         if let Some((min_x, min_y, max_x, max_y)) =
             compute_opaque_bbox(&displayed_frames[i - 1], &displayed_frames[i], 160, 120)
         {
-            let _patch = extract_patch(&displayed_frames[i], 160, min_x, min_y, max_x, max_y);
+            bbox_info.push((min_x, min_y, max_x, max_y, i));
             let area = ((max_x - min_x) * (max_y - min_y)) as f64;
             total_patch_area += area;
             patch_count += 1;
@@ -407,17 +545,36 @@ pub fn candidate_opaque_bbox_local(
 
     let frame_count = resized.frames.len();
 
-    // Encode using rusticle default (local palettes via lossy)
-    let bytes = resized
-        .optimize(OptLevel::O3)
-        .lossy(80)
-        .to_bytes()
-        .map_err(|e| e.to_string())?;
+    // Encode with per-frame local palettes and opaque bbox patches
+    let mut frames_data = Vec::new();
 
-    fs::write(output_path, &bytes).map_err(|e| e.to_string())?;
+    for (min_x, min_y, max_x, max_y, frame_idx) in bbox_info {
+        let patch = extract_patch(&displayed_frames[frame_idx], 160, min_x, min_y, max_x, max_y);
+        let patch_w = max_x - min_x;
+        let patch_h = max_y - min_y;
+
+        // Quantize this patch to its own local palette
+        let (palette_rgb, indices, transparent_idx) =
+            quantize_to_palette(&patch, patch_w, patch_h)?;
+
+        frames_data.push(BboxFrameData {
+            palette: palette_rgb,
+            indices,
+            transparent_idx,
+            delay: resized.frames[frame_idx].delay,
+            width: patch_w as u16,
+            height: patch_h as u16,
+            left: min_x as u16,
+            top: min_y as u16,
+        });
+    }
+
+    encode_gif_with_bbox_patches(160, 120, frames_data, None, output_path)?;
 
     let elapsed = start.elapsed();
-    let output_bytes = bytes.len() as u64;
+    let output_bytes = fs::metadata(output_path)
+        .map_err(|e| e.to_string())?
+        .len();
 
     Ok(CandidateMetrics {
         name: "opaque_bbox_local".to_string(),
@@ -456,10 +613,17 @@ pub fn candidate_transparent_bbox_local(
         prev_canvas = canvas;
     }
 
+    let mut bbox_info = Vec::new();
     let mut total_patch_area = 0.0;
     let mut total_transparent = 0.0;
     let mut patch_count = 0;
 
+    // Frame 0: full canvas (no transparent pixels in frame 0)
+    bbox_info.push((0, 0, 160, 120, 0));
+    total_patch_area += (160 * 120) as f64;
+    patch_count += 1;
+
+    // Frames 1+: compute transparent bboxes
     for i in 1..displayed_frames.len() {
         if let Some((min_x, min_y, max_x, max_y)) =
             compute_transparent_bbox(&displayed_frames[i - 1], &displayed_frames[i], 160, 120)
@@ -475,6 +639,7 @@ pub fn candidate_transparent_bbox_local(
                 .count();
             total_transparent += transparent_count as f64;
 
+            bbox_info.push((min_x, min_y, max_x, max_y, i));
             patch_count += 1;
         }
     }
@@ -493,17 +658,57 @@ pub fn candidate_transparent_bbox_local(
 
     let frame_count = resized.frames.len();
 
-    // Encode using rusticle default
-    let bytes = resized
-        .optimize(OptLevel::O3)
-        .lossy(80)
-        .to_bytes()
-        .map_err(|e| e.to_string())?;
+    // Encode with per-frame local palettes and transparent bbox patches
+    let mut frames_data = Vec::new();
 
-    fs::write(output_path, &bytes).map_err(|e| e.to_string())?;
+    for (min_x, min_y, max_x, max_y, frame_idx) in bbox_info {
+        let mut patch = extract_patch(&displayed_frames[frame_idx], 160, min_x, min_y, max_x, max_y);
+        let patch_w = max_x - min_x;
+        let patch_h = max_y - min_y;
+
+        // Mark unchanged pixels as transparent before quantization
+        for y in 0..patch_h {
+            for x in 0..patch_w {
+                let idx = (y * patch_w + x) * 4;
+                let canvas_idx = ((min_y + y) * 160 + (min_x + x)) * 4;
+                
+                // Check if this pixel is unchanged from previous frame
+                if frame_idx > 0 {
+                    let prev_a = displayed_frames[frame_idx - 1][canvas_idx + 3];
+                    let prev_rgb = &displayed_frames[frame_idx - 1][canvas_idx..canvas_idx + 3];
+                    let curr_a = displayed_frames[frame_idx][canvas_idx + 3];
+                    let curr_rgb = &displayed_frames[frame_idx][canvas_idx..canvas_idx + 3];
+                    
+                    // If unchanged, mark as transparent
+                    if prev_a == curr_a && prev_rgb == curr_rgb {
+                        patch[idx + 3] = 0; // Set alpha to 0
+                    }
+                }
+            }
+        }
+
+        // Quantize this patch to its own local palette
+        let (palette_rgb, indices, transparent_idx) =
+            quantize_to_palette(&patch, patch_w, patch_h)?;
+
+        frames_data.push(BboxFrameData {
+            palette: palette_rgb,
+            indices,
+            transparent_idx,
+            delay: resized.frames[frame_idx].delay,
+            width: patch_w as u16,
+            height: patch_h as u16,
+            left: min_x as u16,
+            top: min_y as u16,
+        });
+    }
+
+    encode_gif_with_bbox_patches(160, 120, frames_data, None, output_path)?;
 
     let elapsed = start.elapsed();
-    let output_bytes = bytes.len() as u64;
+    let output_bytes = fs::metadata(output_path)
+        .map_err(|e| e.to_string())?
+        .len();
 
     Ok(CandidateMetrics {
         name: "transparent_bbox_local".to_string(),

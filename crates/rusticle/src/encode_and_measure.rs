@@ -124,10 +124,18 @@ impl EncodeAndMeasureTelemetry {
         }
         let _ = writeln!(json, r#"],"#);
 
-        let _ = writeln!(json, r#"  "measurement_succeeded": {},"#, self.measurement_succeeded);
+        let _ = writeln!(
+            json,
+            r#"  "measurement_succeeded": {},"#,
+            self.measurement_succeeded
+        );
 
         if let Some(err) = &self.measurement_error {
-            let _ = writeln!(json, r#"  "measurement_error": "{}"#, err.replace('"', "\\\""));
+            let _ = writeln!(
+                json,
+                r#"  "measurement_error": "{}"#,
+                err.replace('"', "\\\"")
+            );
         }
 
         let _ = write!(json, r#"  "measured_candidates": ["#);
@@ -190,7 +198,8 @@ impl EncodeAndMeasure {
         }
 
         // Check synthetic transparency risk
-        if decision.score_breakdown.synthetic_transparency_risk > config.transparency_risk_threshold {
+        if decision.score_breakdown.synthetic_transparency_risk > config.transparency_risk_threshold
+        {
             reasons.push(format!(
                 "transparency_risk_elevated ({:.2})",
                 decision.score_breakdown.synthetic_transparency_risk
@@ -201,7 +210,8 @@ impl EncodeAndMeasure {
         use crate::profiler::SequenceTaxonomy;
         let is_fragile_taxonomy = matches!(
             profile.taxonomy,
-            SequenceTaxonomy::OpaqueDeltaGlobalPalette | SequenceTaxonomy::DisposalHeavyBackgroundPrevious
+            SequenceTaxonomy::OpaqueDeltaGlobalPalette
+                | SequenceTaxonomy::DisposalHeavyBackgroundPrevious
         );
         if is_fragile_taxonomy {
             reasons.push(format!("fragile_taxonomy ({})", profile.taxonomy.name()));
@@ -292,7 +302,8 @@ impl EncodeAndMeasure {
         }
 
         // Check if uncertain
-        let (is_uncertain, reasons) = Self::is_uncertain(&decision, &decision.alternatives, profile, config);
+        let (is_uncertain, reasons) =
+            Self::is_uncertain(&decision, &decision.alternatives, profile, config);
         if !is_uncertain {
             return (decision, telemetry);
         }
@@ -302,7 +313,11 @@ impl EncodeAndMeasure {
 
         // Measure top N candidates
         let mut candidates_to_measure = vec![decision.chosen_candidate.clone()];
-        for (alt_repr, _) in decision.alternatives.iter().take(config.top_n_candidates - 1) {
+        for (alt_repr, _) in decision
+            .alternatives
+            .iter()
+            .take(config.top_n_candidates - 1)
+        {
             candidates_to_measure.push(alt_repr.clone());
         }
 
@@ -476,7 +491,8 @@ mod tests {
 
         let profile = create_test_profile(SequenceTaxonomy::OpaqueDeltaGlobalPalette);
 
-        let (is_uncertain, reasons) = EncodeAndMeasure::is_uncertain(&decision, &decision.alternatives, &profile, &config);
+        let (is_uncertain, reasons) =
+            EncodeAndMeasure::is_uncertain(&decision, &decision.alternatives, &profile, &config);
         assert!(is_uncertain);
         assert!(reasons.iter().any(|r| r.contains("score_gap_small")));
     }
@@ -513,7 +529,8 @@ mod tests {
         let config = EncodeAndMeasureConfig::default();
         let profile = create_test_profile(SequenceTaxonomy::TransparencyHeavySparseDelta);
 
-        let (is_uncertain, reasons) = EncodeAndMeasure::is_uncertain(&decision, &decision.alternatives, &profile, &config);
+        let (is_uncertain, reasons) =
+            EncodeAndMeasure::is_uncertain(&decision, &decision.alternatives, &profile, &config);
         assert!(is_uncertain);
         assert!(reasons.iter().any(|r| r.contains("chosen_candidate_risky")));
     }
@@ -561,7 +578,8 @@ mod tests {
         let config = EncodeAndMeasureConfig::default();
         let profile = create_test_profile(SequenceTaxonomy::Photographic);
 
-        let (is_uncertain, reasons) = EncodeAndMeasure::is_uncertain(&decision, &decision.alternatives, &profile, &config);
+        let (is_uncertain, reasons) =
+            EncodeAndMeasure::is_uncertain(&decision, &decision.alternatives, &profile, &config);
         assert!(!is_uncertain);
         assert!(reasons.is_empty());
     }

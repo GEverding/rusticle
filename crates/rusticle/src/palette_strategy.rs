@@ -259,8 +259,8 @@ fn compute_color_pressure(profile: &GifProfile) -> f32 {
 /// Compute disposal churn indicator (0.0 = stable, 1.0 = high churn).
 fn compute_disposal_churn(profile: &GifProfile) -> f32 {
     let dist = &profile.disposal_distribution;
-    let total = (dist.keep_count + dist.none_count + dist.background_count + dist.previous_count)
-        as f32;
+    let total =
+        (dist.keep_count + dist.none_count + dist.background_count + dist.previous_count) as f32;
 
     if total == 0.0 {
         return 0.0;
@@ -273,7 +273,10 @@ fn compute_disposal_churn(profile: &GifProfile) -> f32 {
     let previous_ratio = dist.previous_count as f32 / total;
 
     // Entropy-like measure: high when all methods are equally used
-    let max_ratio = keep_ratio.max(none_ratio).max(background_ratio).max(previous_ratio);
+    let max_ratio = keep_ratio
+        .max(none_ratio)
+        .max(background_ratio)
+        .max(previous_ratio);
     (1.0 - max_ratio).min(1.0)
 }
 

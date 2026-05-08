@@ -184,7 +184,11 @@ impl Tier2Telemetry {
         let _ = writeln!(json, r#"{{"#);
         let _ = writeln!(json, r#"  "frame_index": {},"#, self.frame_index);
         let _ = writeln!(json, r#"  "was_measured": {},"#, self.was_measured);
-        let _ = writeln!(json, r#"  "measurement_succeeded": {},"#, self.measurement_succeeded);
+        let _ = writeln!(
+            json,
+            r#"  "measurement_succeeded": {},"#,
+            self.measurement_succeeded
+        );
         let _ = writeln!(json, r#"  "wall_clock_ms": {},"#, self.wall_clock_ms);
 
         let _ = write!(json, r#"  "uncertainty_reasons": ["#);
@@ -197,7 +201,11 @@ impl Tier2Telemetry {
         let _ = writeln!(json, r#"],"#);
 
         if let Some(reason) = &self.fallback_reason {
-            let _ = writeln!(json, r#"  "fallback_reason": "{}"#, reason.replace('"', "\\\""));
+            let _ = writeln!(
+                json,
+                r#"  "fallback_reason": "{}"#,
+                reason.replace('"', "\\\"")
+            );
         }
 
         let _ = write!(json, r#"  "measured_results": ["#);
@@ -214,13 +222,21 @@ impl Tier2Telemetry {
             let _ = write!(
                 json,
                 r#"{{"repr":"{}","heuristic_score":{:.3},"actual_bytes":{},"passed_guardrails":{},"was_chosen":{}"#,
-                repr_name, result.heuristic_score.total_score, result.actual_bytes, result.passed_guardrails, result.was_chosen
+                repr_name,
+                result.heuristic_score.total_score,
+                result.actual_bytes,
+                result.passed_guardrails,
+                result.was_chosen
             );
             if let Some(psnr) = result.estimated_psnr_db {
                 let _ = write!(json, r#","psnr_db":{:.1}"#, psnr);
             }
             if let Some(reason) = &result.guardrail_rejection_reason {
-                let _ = write!(json, r#","rejection_reason":"{}""#, reason.replace('"', "\\\""));
+                let _ = write!(
+                    json,
+                    r#","rejection_reason":"{}""#,
+                    reason.replace('"', "\\\"")
+                );
             }
             let _ = write!(json, r#"}}"#);
         }
@@ -259,7 +275,8 @@ impl Tier2Measurer {
             for (alt_repr, alt_score) in &decision.alternatives {
                 let alt_family = candidate_to_family(alt_repr);
                 if alt_family.is_lut_preserving() {
-                    let delta = (alt_score.total_score - decision.score_breakdown.total_score).abs();
+                    let delta =
+                        (alt_score.total_score - decision.score_breakdown.total_score).abs();
                     if delta < guardrails.lut_breaking_penalty_threshold {
                         reasons.push(format!(
                             "lut_breaking_with_close_preserving_alternative ({:.3})",
@@ -340,13 +357,18 @@ impl Tier2Measurer {
             if psnr < guardrails.min_psnr_db {
                 return (
                     false,
-                    Some(format!("psnr_below_threshold ({:.1}dB < {:.1}dB)", psnr, guardrails.min_psnr_db)),
+                    Some(format!(
+                        "psnr_below_threshold ({:.1}dB < {:.1}dB)",
+                        psnr, guardrails.min_psnr_db
+                    )),
                 );
             }
         }
 
         // Check synthetic transparency risk
-        if result.heuristic_score.synthetic_transparency_risk > guardrails.max_synthetic_transparency_risk {
+        if result.heuristic_score.synthetic_transparency_risk
+            > guardrails.max_synthetic_transparency_risk
+        {
             return (
                 false,
                 Some(format!(
@@ -362,7 +384,10 @@ impl Tier2Measurer {
         if family.is_lut_breaking() && result.heuristic_score.lut_cost > 0.8 {
             return (
                 false,
-                Some(format!("lut_breaking_cost_too_high ({:.2})", result.heuristic_score.lut_cost)),
+                Some(format!(
+                    "lut_breaking_cost_too_high ({:.2})",
+                    result.heuristic_score.lut_cost
+                )),
             );
         }
 

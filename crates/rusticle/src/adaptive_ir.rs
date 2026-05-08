@@ -107,7 +107,12 @@ pub struct BoundingBox {
 impl BoundingBox {
     /// Create a new bounding box.
     pub fn new(left: u16, top: u16, right: u16, bottom: u16) -> Self {
-        Self { left, top, right, bottom }
+        Self {
+            left,
+            top,
+            right,
+            bottom,
+        }
     }
 
     /// Width of the bounding box.
@@ -349,7 +354,8 @@ impl CanonicalSequenceBuilder {
             );
 
             // Compute changed region
-            let mut changed_region = ChangedRegion::compute(&pre_draw_canvas_snapshot, &displayed_canvas);
+            let mut changed_region =
+                ChangedRegion::compute(&pre_draw_canvas_snapshot, &displayed_canvas);
 
             // Check if source patch is full-canvas
             changed_region.is_full_canvas_patch =
@@ -359,7 +365,12 @@ impl CanonicalSequenceBuilder {
             let mut post_disposal_canvas = displayed_canvas.clone_canvas();
             match frame.dispose {
                 DisposalMethod::Background => {
-                    post_disposal_canvas.clear_region(frame.left, frame.top, frame.width, frame.height);
+                    post_disposal_canvas.clear_region(
+                        frame.left,
+                        frame.top,
+                        frame.width,
+                        frame.height,
+                    );
                 }
                 DisposalMethod::Previous => {
                     // Restore to pre-draw canvas
@@ -406,7 +417,11 @@ impl CanonicalSequenceBuilder {
 /// 2. Subframe-sized: frame.width * frame.height * 4 bytes (subframe patches)
 ///
 /// We detect which case we're in and extract the patch accordingly.
-fn extract_source_patch(frame: &crate::types::Frame, canvas_width: u16, canvas_height: u16) -> SourcePatch {
+fn extract_source_patch(
+    frame: &crate::types::Frame,
+    canvas_width: u16,
+    canvas_height: u16,
+) -> SourcePatch {
     let frame_width = frame.width as usize;
     let frame_height = frame.height as usize;
     let left = frame.left;
@@ -446,7 +461,8 @@ fn extract_source_patch(frame: &crate::types::Frame, canvas_width: u16, canvas_h
         frame.pixels.clone()
     };
 
-    let (has_transparency, transparent_count, opaque_count) = SourcePatch::analyze_transparency(&patch_pixels);
+    let (has_transparency, transparent_count, opaque_count) =
+        SourcePatch::analyze_transparency(&patch_pixels);
 
     SourcePatch {
         pixels: patch_pixels,
@@ -916,14 +932,16 @@ mod tests {
         for _ in 0..100 {
             opaque_pixels.extend_from_slice(&[255u8, 0, 0, 255]);
         }
-        let (has_trans, trans_count, opaque_count) = SourcePatch::analyze_transparency(&opaque_pixels);
+        let (has_trans, trans_count, opaque_count) =
+            SourcePatch::analyze_transparency(&opaque_pixels);
         assert!(!has_trans);
         assert_eq!(trans_count, 0);
         assert_eq!(opaque_count, 100);
 
         // Transparent patch: 100 pixels of [0, 0, 0, 0]
         let transparent_pixels = vec![0u8; 400];
-        let (has_trans, trans_count, opaque_count) = SourcePatch::analyze_transparency(&transparent_pixels);
+        let (has_trans, trans_count, opaque_count) =
+            SourcePatch::analyze_transparency(&transparent_pixels);
         assert!(has_trans);
         assert_eq!(trans_count, 100);
         assert_eq!(opaque_count, 0);
@@ -934,7 +952,8 @@ mod tests {
             mixed_pixels[i * 4 + 3] = 255; // First 100 opaque
         }
         // Last 100 are transparent (alpha=0 by default)
-        let (has_trans, trans_count, opaque_count) = SourcePatch::analyze_transparency(&mixed_pixels);
+        let (has_trans, trans_count, opaque_count) =
+            SourcePatch::analyze_transparency(&mixed_pixels);
         assert!(has_trans);
         assert_eq!(trans_count, 100);
         assert_eq!(opaque_count, 100);
