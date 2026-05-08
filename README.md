@@ -3,6 +3,8 @@
 High-performance GIF resize, optimize, and encode library.
 
 > **Alpha software.** API may change. Not validated at scale or across diverse GIF inputs. Use at your own risk.
+>
+> **Current direction**: Corrected default path (disposal-aware optimization, quality-gated fast path). Adaptive/two-path research is experimental and not the default.
 
 ## What it does
 
@@ -54,7 +56,7 @@ rusticle quality original.gif processed.gif
 
 See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for full details.
 
-## How it's fast
+## How it's fast (Mainline Path)
 
 **Palette LUT fast path** — For GIFs with a global palette, builds a 262KB lookup table (64³ entries, 6 bits per channel) for O(1) nearest-neighbor color mapping. Skips expensive imagequant quantization entirely. Quality-gated: automatically falls back to imagequant if avg distance² ≥ 150, outlier ratio ≥ 5%, or palette utilization ≤ 30%.
 
@@ -72,12 +74,16 @@ See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for full details.
 
 **jemalloc** — CLI binary uses jemalloc on non-MSVC targets.
 
-## Tradeoffs
+## Tradeoffs (Mainline Path)
 
 - Fast path trades ~5 dB PSNR for ~5× speed on palette-matching GIFs (GOOD vs EXCELLENT quality)
 - Requires nightly Rust (`portable_simd`)
 - Lossy compression is conservative — max threshold 20 even at `quality=0`
 - Pipeline ordering matters: calling `optimize()` before `lossy()` can cause lossy to no-op on cropped subframes
+
+## Research & Experimental Features
+
+The codebase includes experimental research paths (adaptive encoder, two-path optimizer) that are **not the default**. These are gated behind `--adaptive` and `--optimizer-strategy` CLI flags. The mainline product direction is the corrected default path described above.
 
 ## API
 

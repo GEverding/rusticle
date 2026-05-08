@@ -1,14 +1,15 @@
-# Adaptive Encoder Results & Rollout Decision
+# Adaptive Encoder Results & Rollout Decision (Research)
 
-**Status**: Experimental (telemetry-only)  
+**Status**: Experimental (telemetry-only, not the default)  
 **Date**: 2026-04-20  
-**Version**: 1.0
+**Version**: 1.0  
+**Scope**: This document describes research work on adaptive encoding. The mainline product direction is the corrected default path (see `TUNING_RECOMMENDATION.md`).
 
 ---
 
 ## Executive Summary
 
-The adaptive encoder is **fully implemented and operational** with complete architecture, telemetry harness, and decision pipeline. Adaptive decisions are emitted and validated on a 70-file corpus (100% success rate). However, adaptive decisions are **not yet used for actual encoding** — the current-path encoder is the default.
+The adaptive encoder is **fully implemented and operational** with complete architecture, telemetry harness, and decision pipeline. Adaptive decisions are emitted and validated on a 70-file corpus (100% success rate). However, adaptive decisions are **not yet used for actual encoding** — the corrected default-path encoder is the default.
 
 **Rollout recommendation**: Keep experimental. Do not switch defaults until adaptive-bytes implementation is complete and measured on holdout corpora.
 

@@ -1,6 +1,8 @@
-# Rusticle Benchmarks
+# Rusticle Benchmarks (Mainline Path)
 
 Performance comparisons against gifsicle 1.96 on Apple Silicon (M-series).
+
+**Scope**: These benchmarks measure the corrected default path (disposal-aware optimization, quality-gated fast path). This is the current mainline product direction. Adaptive/two-path research results are in separate documents.
 
 ## Correctness Fix Wave (2026-04-20)
 

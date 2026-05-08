@@ -766,6 +766,25 @@ In `crates/rusticle/src/encode.rs`, the `find_transparent_index_and_remap()` fun
 
 ---
 
+## Corpus-Quality Evaluation (Final)
+
+The corrected default path held up on the larger corpus-quality pass:
+
+- **149 multi-frame files evaluated**
+- **Worst rusticle BA**: 7.60
+- **Max rusticle-worse-than-gifsicle delta**: +1.09
+- Many of the worst files still had **rusticle better than gifsicle**
+- Two very large gifsicle failures were **much worse than rusticle**
+
+### Final readout
+
+- The corrected default path is **competitive**.
+- The adaptive/two-path line stayed useful as research, but not as the mainline answer.
+- The voyager-class result remains a **narrow representation win**: opaque bbox patches matter there.
+- Next gains are more likely to come from **better data** and a **larger corpus** than from more optimizer machinery.
+
+---
+
 ## EXP-010: Full Holdout Rerun After Disposal/Subframe Fix Wave
 
 **Status**: ✓ Complete

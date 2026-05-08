@@ -1,8 +1,9 @@
-# Butteraugli Tuning Recommendation
+# Butteraugli Tuning Recommendation (Mainline Path)
 
 **Generated**: 2026-04-18  
-**Status**: Final recommendation from EXP-001 through EXP-005  
-**Policy Decision**: **Global-only profile**
+**Status**: Final recommendation from EXP-001 through EXP-005 for the corrected default path  
+**Policy Decision**: **Global-only profile**  
+**Scope**: This document applies to the mainline corrected default path (disposal-aware optimization, quality-gated fast path). Adaptive/two-path research is experimental and not covered here.
 
 ---
 
