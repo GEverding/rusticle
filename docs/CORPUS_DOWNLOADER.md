@@ -2,20 +2,26 @@
 
 Implements the large GIF corpus acquisition pipeline from `LARGE_GIF_CORPUS_PIPELINE.md`.
 
+> ⚠️ **Research-only corpus mode**
+>
+> This downloader now supports broader web-scraped sources (`tenor_html`, `reactiongifs_html`) to improve corpus diversity/volume for internal research.
+>
+> These sources may have **uncertain or non-uniform licensing**. Treat outputs as **non-redistributable research artifacts**, not product fixtures or redistributable sample assets.
+
 ## Quick Start
 
 ```bash
-# Download 512 GIFs from Giphy and Tenor
+# Download from practical no-key sources first
 python3 scripts/corpus_downloader.py \
     --output corpus \
     --target 512 \
-    --sources giphy tenor
+    --sources wikimedia archive tenor_html reactiongifs_html
 
 # Download smaller batch for testing
 python3 scripts/corpus_downloader.py \
     --output corpus_test \
-    --target 50 \
-    --sources giphy
+    --target 12 \
+    --sources tenor_html reactiongifs_html wikimedia archive
 ```
 
 ## Output Structure
@@ -62,7 +68,7 @@ Each entry in `manifest.json` contains:
   "id": "corpus_0001",
   "source_url": "https://media.giphy.com/media/...",
   "source_id": "giphy_0000",
-  "source_type": "giphy|tenor|archive|opengameart|wikimedia",
+  "source_type": "giphy|tenor_html|reactiongifs_html|archive|opengameart|wikimedia",
   "local_path": "corpus/gifs/corpus_0001.gif",
   "md5": "a1b2c3d4e5f6...",
   "license": "CC0|CC-BY|public-domain",
@@ -81,6 +87,7 @@ Each entry in `manifest.json` contains:
   "transparency": {
     "has_transparency": true,
     "transparent_pixel_ratio": 0.35,
+    "transparent_frame_ratio": 0.50,
     "category": "heavy|light|none|mixed"
   },
   "disposal": {
@@ -127,8 +134,10 @@ The tool extracts structural metadata without full GIF decoding:
 - Accurate for all GIFs
 
 ### Transparency
-- Detected from Graphics Control Extension (GCE)
-- Categorized as: heavy (>50%), light (<10%), none, mixed
+- Detected from the GCE attached to each image/frame (not raw GCE block count)
+- `transparent_pixel_ratio` is a **frame-area proxy** (`sum(area of frames with transparency flag) / sum(all frame areas)`) from structural metadata only
+- `transparent_frame_ratio` is `transparent_frames / total_frames`
+- Categorized as: heavy (>=50% area proxy), light (<=10% area proxy), none, mixed
 
 ### Disposal Methods
 - Parsed from GCE disposal field
@@ -176,7 +185,7 @@ Failures are logged to `failures.jsonl`:
   "source_url": "https://...",
   "source_type": "giphy",
   "source_id": "giphy_0000",
-  "error_type": "network_timeout|invalid_gif|metadata_extraction|duplicate_md5|save_error|download_error",
+  "error_type": "network_timeout|invalid_gif|metadata_extraction|duplicate_md5|save_error|download_error|adapter_query_error|rate_limited",
   "error_message": "...",
   "timestamp": "2026-04-21T12:34:56Z"
 }
@@ -198,17 +207,38 @@ Failures are logged to `failures.jsonl`:
 - **Coverage**: ~12 direct URLs (expandable)
 - **Rate limit**: 0.5s between downloads
 
-### Tenor (Implemented)
-- **Status**: Fallback to direct URLs (API requires key)
-- **License**: CC0
-- **Coverage**: ~2 direct URLs (expandable)
-- **Rate limit**: 0.5s between downloads
+### Tenor HTML (Implemented)
+- **Status**: Implemented via HTML search scraping (no API key)
+- **Search URL pattern**: `https://tenor.com/search/<term>-gifs`
+- **Extraction strategy**: Parse raw HTML and extract direct `https://media.tenor.com/...gif` URLs
+- **Manifest source_type**: `tenor_html` (CLI alias: `tenor`)
+- **License metadata**: Marked `UNCERTAIN_RESEARCH_ONLY`
+- **Notes fields**: include search URL + query + research-only caveat
+- **Limitations**:
+  - HTML shape can change without notice
+  - Licensing should be treated as uncertain for redistribution
 
-### Internet Archive (Stubbed)
-- **Status**: Not implemented (requires API integration)
-- **License**: CC0 / public domain
-- **Coverage**: Potentially 80+ GIFs
-- **Next steps**: Implement `advancedsearch.php` query + result parsing
+### ReactionGIFs HTML (Implemented)
+- **Status**: Implemented via site search HTML scraping (no API key)
+- **Search URL pattern**: `https://www.reactiongifs.com/?s=<term>`
+- **Extraction strategy**: Parse raw HTML and extract direct `.gif` URLs
+- **Manifest source_type**: `reactiongifs_html`
+- **License metadata**: Marked `UNCERTAIN_RESEARCH_ONLY`
+- **Notes fields**: include search URL + query + research-only caveat
+- **Limitations**:
+  - HTML/discovery quality varies by query
+  - Licensing should be treated as uncertain for redistribution
+
+### Internet Archive (Implemented)
+- **Status**: Implemented via public APIs (no key)
+- **Discovery endpoint**: `https://archive.org/advancedsearch.php`
+- **File enumeration endpoint**: `https://archive.org/metadata/<identifier>`
+- **GIF file URL pattern**: `https://archive.org/download/<identifier>/<filename.gif>`
+- **License metadata**: Best-effort from `licenseurl` / `rights` (often missing/inconsistent)
+- **Coverage**: High potential volume; adapter currently bounds pages and files/item for runtime
+- **Limitations**:
+  - Search quality can be noisy (query returns some non-animated/noisy items)
+  - Per-item metadata shape varies significantly
 
 ### OpenGameArt (Stubbed)
 - **Status**: Not implemented (requires manual curation)
@@ -216,17 +246,22 @@ Failures are logged to `failures.jsonl`:
 - **Coverage**: ~20 GIFs
 - **Next steps**: Manual URL list or web scraping
 
-### Wikimedia Commons (Stubbed)
-- **Status**: Not implemented (requires API integration)
-- **License**: CC0 / CC-BY
-- **Coverage**: ~12 GIFs
-- **Next steps**: Implement `allimages` query + filtering
+### Wikimedia Commons (Implemented)
+- **Status**: Implemented via MediaWiki API (no key)
+- **Endpoint**: `https://commons.wikimedia.org/w/api.php`
+- **Query mode**: `generator=search` in file namespace (`gsrnamespace=6`) with GIF filters
+- **Props fetched**: `imageinfo` (`url`, `mime`, `extmetadata`)
+- **License metadata**: Best-effort from extmetadata `LicenseShortName` + `LicenseUrl`
+- **Coverage**: Good growth path; broad search terms can be noisy
+- **Limitations**:
+  - Some files do not expose complete/normalized license fields
+  - Search relevance varies by term; practical runs should use bounded targets
 
 ## Extending the Tool
 
 ### Adding Direct URLs
 
-Edit `download_from_giphy()` or `download_from_tenor()` to add more URLs:
+Edit `download_from_giphy()` to add more curated direct URLs, or tune query/page limits in `download_from_tenor_html()` / `download_from_reactiongifs()`:
 
 ```python
 direct_urls = [
@@ -266,8 +301,8 @@ def download_from_archive(self):
 To reproduce a corpus:
 
 ```bash
-# Same command → same split assignment (different runs may have different GIFs if sources change)
-python3 scripts/corpus_downloader.py --output corpus --target 512 --sources giphy tenor
+# Same command → same split assignment (different runs may have different GIFs if source indexes change)
+python3 scripts/corpus_downloader.py --output corpus --target 512 --sources tenor_html reactiongifs_html wikimedia archive
 ```
 
 ## Performance
@@ -290,9 +325,11 @@ python3 scripts/corpus_downloader.py --output corpus --target 512 --sources giph
    - Duration is not computed (would require full decode)
    - Content type classification is simple (dimensions-based)
 
-2. **API adapters**: Currently stubbed (Tenor, Archive.org, etc.)
-   - Requires API keys or manual curation
-   - Can be extended with proper implementation
+2. **API adapters**: License and relevance metadata quality varies
+    - Wikimedia extmetadata is not always complete
+    - Internet Archive rights/license fields are inconsistent across items
+    - Tenor HTML and ReactionGIFs HTML entries are research-only with uncertain licensing
+    - Search/discovery can return noisy results; tune query terms and bounds
 
 3. **Perceptual deduplication**: Not implemented
    - Only MD5 (byte-level) deduplication
@@ -305,8 +342,8 @@ python3 scripts/corpus_downloader.py --output corpus --target 512 --sources giph
 ## Future Work (rusticle-1tb)
 
 1. **Expand source adapters**:
-   - Implement Internet Archive API integration
-   - Implement Wikimedia Commons API integration
+   - Improve Wikimedia query diversity + paging strategy
+   - Improve Internet Archive discovery query quality
    - Add manual curation for OpenGameArt
 
 2. **Improve metadata extraction**:

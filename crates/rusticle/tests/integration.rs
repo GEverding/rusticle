@@ -429,11 +429,18 @@ fn test_quality_comparison_with_subframed_gif() {
             .expect("Failed to encode original"),
     )
     .expect("Failed to decode original")
-    .resize(processed.width as u32, processed.height as u32, Filter::Lanczos3)
+    .resize(
+        processed.width as u32,
+        processed.height as u32,
+        Filter::Lanczos3,
+    )
     .expect("Failed to resize original");
 
     // Compare frames - should NOT panic even if frames are subframed
-    let frame_count = original_resized.frames.len().min(processed_decoded.frames.len());
+    let frame_count = original_resized
+        .frames
+        .len()
+        .min(processed_decoded.frames.len());
     assert!(frame_count > 0, "Should have at least one frame to compare");
 
     for i in 0..frame_count {

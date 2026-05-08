@@ -3,7 +3,7 @@
 Large GIF corpus acquisition and classification tool.
 
 Implements the pipeline from docs/LARGE_GIF_CORPUS_PIPELINE.md:
-- Downloads GIFs from multiple sources (Giphy, Tenor, Archive.org)
+- Downloads GIFs from multiple sources (Giphy, Tenor HTML, ReactionGIFs, Archive.org)
 - Deduplicates by MD5
 - Extracts structural metadata (dimensions, frames, transparency, disposal, palette, subframes)
 - Produces manifest (JSONL + JSON) and failure logs
@@ -12,12 +12,11 @@ Usage:
     python scripts/corpus_downloader.py \
         --output corpus \
         --target 512 \
-        --sources giphy tenor archive \
+        --sources giphy tenor_html reactiongifs_html archive \
         --max-workers 4
 
 Environment:
-    GIPHY_API_KEY: Giphy API key (optional, uses free tier if not set)
-    TENOR_API_KEY: Tenor API key (optional, uses free tier if not set)
+    No API keys required for currently implemented adapters.
 """
 
 import os
@@ -26,6 +25,7 @@ import json
 import hashlib
 import time
 import logging
+import re
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
@@ -33,6 +33,8 @@ from typing import Optional, Dict, List, Tuple, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
+from urllib.parse import urlencode, quote
+from html import unescape
 import struct
 
 # Configure logging
@@ -57,6 +59,7 @@ class GifMetadata:
     duration_ms: int
     has_transparency: bool
     transparent_pixel_ratio: float
+    transparent_frame_ratio: float
     transparency_category: str  # heavy|light|none|mixed
     disposal_distribution: Dict[str, int]
     dominant_disposal: str
@@ -88,7 +91,7 @@ class ManifestEntry:
     id: str
     source_url: str
     source_id: str
-    source_type: str  # giphy|tenor|archive|opengameart|wikimedia
+    source_type: str  # giphy|tenor_html|reactiongifs_html|archive|opengameart|wikimedia
     local_path: str
     md5: str
     license: str
@@ -109,6 +112,14 @@ class ManifestEntry:
     content_confidence: float
     tags: List[str]
     notes: Optional[str] = None
+
+
+@dataclass
+class PendingGCE:
+    """Graphics Control Extension state to apply to the next image."""
+
+    disposal_method: int
+    has_transparency: bool
 
 
 class GifDecoder:
@@ -145,17 +156,17 @@ class GifDecoder:
                 pos += global_palette_size * 3
 
             # Parse frames
-            frames = []
             frame_count = 0
-            total_pixels = width * height
-            transparent_pixels = 0
-            unique_colors = set()
             disposal_methods = {}
+            transparent_area = 0
+            total_frame_area = 0
+            transparent_frame_count = 0
             has_local_palettes = False
             local_palette_count = 0
             offset_frames = 0
             offsets_x = []
             offsets_y = []
+            pending_gce: Optional[PendingGCE] = None
 
             while pos < len(data):
                 separator = data[pos]
@@ -171,12 +182,22 @@ class GifDecoder:
                         if block_size >= 4 and pos + 4 <= len(data):
                             packed = data[pos]
                             disposal_method = (packed >> 2) & 0x07
-                            disposal_methods[disposal_method] = (
-                                disposal_methods.get(disposal_method, 0) + 1
+                            pending_gce = PendingGCE(
+                                disposal_method=disposal_method,
+                                has_transparency=bool(packed & 0x01),
                             )
-                            delay = int.from_bytes(data[pos + 1 : pos + 3], "little")
-                            transparent_index = data[pos + 3] if packed & 0x01 else None
-                            pos += block_size + 1  # +1 for block terminator
+                            pos += block_size
+                            if pos < len(data):
+                                pos += 1  # block terminator
+
+                        else:
+                            # Malformed GCE block, attempt to skip like generic extension.
+                            while pos < len(data):
+                                sub_block_size = data[pos]
+                                pos += 1
+                                if sub_block_size == 0:
+                                    break
+                                pos += sub_block_size
 
                     else:  # Skip other extensions
                         while pos < len(data):
@@ -201,6 +222,9 @@ class GifDecoder:
                         offsets_x.append(left)
                         offsets_y.append(top)
 
+                    frame_area = img_width * img_height
+                    total_frame_area += frame_area
+
                     packed = data[pos] if pos < len(data) else 0
                     pos += 1
                     has_local = bool(packed & 0x80)
@@ -222,6 +246,17 @@ class GifDecoder:
 
                     frame_count += 1
 
+                    frame_gce = pending_gce
+                    pending_gce = None
+                    frame_disposal = frame_gce.disposal_method if frame_gce else 0
+                    disposal_methods[frame_disposal] = (
+                        disposal_methods.get(frame_disposal, 0) + 1
+                    )
+
+                    if frame_gce and frame_gce.has_transparency:
+                        transparent_frame_count += 1
+                        transparent_area += frame_area
+
                 elif separator == 0x3B:  # Trailer
                     break
 
@@ -235,8 +270,19 @@ class GifDecoder:
                 return None
 
             # Classify transparency
-            transparent_ratio = 0.0
-            transparency_category = "none"
+            transparent_ratio = (
+                transparent_area / total_frame_area if total_frame_area > 0 else 0.0
+            )
+            transparent_frame_ratio = transparent_frame_count / frame_count
+
+            if transparent_frame_count == 0:
+                transparency_category = "none"
+            elif transparent_ratio >= 0.5:
+                transparency_category = "heavy"
+            elif transparent_ratio <= 0.1:
+                transparency_category = "light"
+            else:
+                transparency_category = "mixed"
 
             # Classify disposal
             disposal_category = "none_heavy"
@@ -313,8 +359,10 @@ class GifDecoder:
                 height=height,
                 frame_count=frame_count,
                 duration_ms=0,  # Would need full decode
-                has_transparency=transparency_category != "none",
+                # Frame-area proxy: no pixel decode in lightweight parser.
+                has_transparency=transparent_frame_count > 0,
                 transparent_pixel_ratio=transparent_ratio,
+                transparent_frame_ratio=transparent_frame_ratio,
                 transparency_category=transparency_category,
                 disposal_distribution=disposal_methods,
                 dominant_disposal=str(dominant_disposal),
@@ -324,7 +372,7 @@ class GifDecoder:
                 global_palette_size=global_palette_size,
                 has_local_palettes=has_local_palettes,
                 local_palette_count=local_palette_count,
-                unique_colors_across_frames=len(unique_colors),
+                unique_colors_across_frames=0,
                 palette_category=palette_category,
                 offset_subframe_ratio=offset_subframe_ratio,
                 offset_subframe_count=offset_frames,
@@ -438,7 +486,30 @@ class CorpusDownloader:
                             "No GIF magic bytes",
                         )
                         return None
-            except (URLError, HTTPError, TimeoutError) as e:
+            except HTTPError as e:
+                if e.code == 429:
+                    logger.warning(f"Rate limited downloading {url}: {e}")
+                    self._log_failure(
+                        url,
+                        source_type,
+                        source_id,
+                        "rate_limited",
+                        str(e),
+                    )
+                    return None
+                if attempt < 2:
+                    wait_time = 2**attempt
+                    logger.info(
+                        f"Retry {attempt + 1}/3 for {url} (waiting {wait_time}s)"
+                    )
+                    time.sleep(wait_time)
+                else:
+                    logger.warning(f"Failed to download {url}: {e}")
+                    self._log_failure(
+                        url, source_type, source_id, "network_timeout", str(e)
+                    )
+                    return None
+            except (URLError, TimeoutError) as e:
                 if attempt < 2:
                     wait_time = 2**attempt
                     logger.info(
@@ -457,6 +528,162 @@ class CorpusDownloader:
                 return None
 
         return None
+
+    def fetch_json(
+        self,
+        url: str,
+        source_type: str,
+        source_id: str,
+        timeout_sec: int = 45,
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch JSON payload with retries.
+
+        Notes:
+        - Uses the same retry/backoff pattern as GIF downloads.
+        - Logs adapter query failures into `failures.jsonl`.
+        """
+        for attempt in range(3):
+            try:
+                req = Request(
+                    url,
+                    headers={
+                        "User-Agent": "rusticle-corpus-downloader/1.0",
+                        "Accept": "application/json",
+                    },
+                )
+                with urlopen(req, timeout=timeout_sec + (attempt * 15)) as response:
+                    body = response.read().decode("utf-8", errors="replace")
+                    return json.loads(body)
+            except (URLError, HTTPError, TimeoutError, json.JSONDecodeError) as e:
+                if attempt < 2:
+                    wait_time = 2**attempt
+                    logger.info(
+                        f"Retry {attempt + 1}/3 JSON fetch for {source_type}:{source_id} (waiting {wait_time}s)"
+                    )
+                    time.sleep(wait_time)
+                else:
+                    logger.warning(f"Failed JSON fetch {url}: {e}")
+                    self._log_failure(
+                        url,
+                        source_type,
+                        source_id,
+                        "adapter_query_error",
+                        str(e),
+                    )
+                    return None
+            except Exception as e:
+                logger.warning(f"Unexpected JSON fetch error {url}: {e}")
+                self._log_failure(
+                    url,
+                    source_type,
+                    source_id,
+                    "adapter_query_error",
+                    str(e),
+                )
+                return None
+
+        return None
+
+    def fetch_text(
+        self,
+        url: str,
+        source_type: str,
+        source_id: str,
+        timeout_sec: int = 45,
+    ) -> Optional[str]:
+        """Fetch text payload with retries.
+
+        Notes:
+        - Uses same retry/backoff model as JSON/GIF fetches.
+        - Logs adapter query failures into `failures.jsonl`.
+        """
+        for attempt in range(3):
+            try:
+                req = Request(
+                    url,
+                    headers={
+                        "User-Agent": "rusticle-corpus-downloader/1.0",
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    },
+                )
+                with urlopen(req, timeout=timeout_sec + (attempt * 15)) as response:
+                    return response.read().decode("utf-8", errors="replace")
+            except (URLError, HTTPError, TimeoutError) as e:
+                if attempt < 2:
+                    wait_time = 2**attempt
+                    logger.info(
+                        f"Retry {attempt + 1}/3 text fetch for {source_type}:{source_id} (waiting {wait_time}s)"
+                    )
+                    time.sleep(wait_time)
+                else:
+                    logger.warning(f"Failed text fetch {url}: {e}")
+                    self._log_failure(
+                        url,
+                        source_type,
+                        source_id,
+                        "adapter_query_error",
+                        str(e),
+                    )
+                    return None
+            except Exception as e:
+                logger.warning(f"Unexpected text fetch error {url}: {e}")
+                self._log_failure(
+                    url,
+                    source_type,
+                    source_id,
+                    "adapter_query_error",
+                    str(e),
+                )
+                return None
+
+        return None
+
+    @staticmethod
+    def _extract_tenor_gif_urls(html: str) -> List[str]:
+        """Extract direct media.tenor.com GIF URLs from HTML."""
+        normalized = html.replace("\\/", "/")
+        matches = re.findall(
+            r"https://media\.tenor\.com/[^\"'<>\s]+?\.gif(?:\?[^\"'<>\s]*)?",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        return list(dict.fromkeys(matches))
+
+    @staticmethod
+    def _extract_reactiongifs_urls(html: str) -> List[str]:
+        """Extract direct GIF URLs from ReactionGIFs HTML."""
+        normalized = html.replace("\\/", "/")
+        matches = re.findall(
+            r"https?://[^\"'<>\s]+?\.gif(?:\?[^\"'<>\s]*)?",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        filtered = [
+            url
+            for url in matches
+            if any(
+                host in url
+                for host in (
+                    "reactiongifs.com",
+                    "www.reactiongifs.com",
+                    "media1.giphy.com",
+                    "media.giphy.com",
+                    "i.imgur.com",
+                    "i0.wp.com",
+                    "i1.wp.com",
+                    "i2.wp.com",
+                )
+            )
+        ]
+        return list(dict.fromkeys(filtered))
+
+    @staticmethod
+    def _clean_extmetadata_value(value: Optional[str]) -> str:
+        """Normalize Wikimedia extmetadata values (strip HTML + decode entities)."""
+        if not value:
+            return ""
+        no_tags = re.sub(r"<[^>]+>", "", value)
+        return unescape(no_tags).strip()
 
     def _log_failure(
         self,
@@ -543,6 +770,7 @@ class CorpusDownloader:
             transparency={
                 "has_transparency": metadata.has_transparency,
                 "transparent_pixel_ratio": metadata.transparent_pixel_ratio,
+                "transparent_frame_ratio": metadata.transparent_frame_ratio,
                 "category": metadata.transparency_category,
             },
             disposal={
@@ -635,45 +863,404 @@ class CorpusDownloader:
 
             time.sleep(0.3)  # Rate limiting
 
-    def download_from_tenor(self, queries: List[str]):
-        """Download GIFs from Tenor (fallback to direct URLs)."""
-        logger.info(f"Downloading from Tenor ({len(queries)} queries)...")
+    @staticmethod
+    def _to_slug(term: str) -> str:
+        """Convert query term to URL-safe slug."""
+        cleaned = re.sub(r"[^a-z0-9]+", "-", term.strip().lower())
+        return cleaned.strip("-") or "gif"
 
-        # Fallback: direct GIF URLs from Tenor
-        direct_urls = [
-            "https://media.tenor.com/images/3f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f/tenor.gif",
-            "https://media.tenor.com/images/4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a/tenor.gif",
-        ]
+    def download_from_tenor_html(self, queries: List[str]):
+        """Download GIFs by scraping Tenor search HTML (no API key)."""
+        logger.info(f"Downloading from Tenor HTML ({len(queries)} queries)...")
 
-        for i, gif_url in enumerate(direct_urls):
+        max_queries = 10
+        per_query_limit = 5
+        selected_queries = list(dict.fromkeys(queries))[:max_queries]
+
+        for term in selected_queries:
             if len(self.manifest_entries) >= self.target_count:
                 break
 
-            gif_id = f"tenor_{i:04d}"
-            start_time = time.time()
-            gif_data = self.download_gif(gif_url, "tenor", gif_id)
-            download_time = int((time.time() - start_time) * 1000)
+            slug = self._to_slug(term)
+            search_url = f"https://tenor.com/search/{quote(slug)}-gifs"
+            source_id = f"tenor_html:search:{slug}"
+            html = self.fetch_text(search_url, "tenor_html", source_id)
+            if not html:
+                continue
 
-            if gif_data:
-                entry = self.process_gif(
-                    gif_data,
-                    gif_url,
-                    "tenor",
-                    gif_id,
-                    ("CC0", "https://tenor.com"),
-                    download_time,
+            gif_urls = self._extract_tenor_gif_urls(html)
+            if not gif_urls:
+                self._log_failure(
+                    search_url,
+                    "tenor_html",
+                    source_id,
+                    "adapter_query_error",
+                    "No direct media.tenor.com GIF URLs found in HTML",
                 )
-                if entry:
-                    self.manifest_entries.append(entry)
+                continue
 
-            time.sleep(0.5)  # Rate limiting
+            logger.info(
+                f"Tenor HTML query '{term}': {len(gif_urls)} candidate direct GIF URLs"
+            )
+
+            added_for_query = 0
+            for idx, gif_url in enumerate(gif_urls):
+                if len(self.manifest_entries) >= self.target_count:
+                    break
+                if added_for_query >= per_query_limit:
+                    break
+
+                gif_source_id = f"tenor_html:{slug}:{idx:04d}"
+                start_time = time.time()
+                gif_data = self.download_gif(gif_url, "tenor_html", gif_source_id)
+                download_time = int((time.time() - start_time) * 1000)
+
+                if gif_data:
+                    entry = self.process_gif(
+                        gif_data,
+                        gif_url,
+                        "tenor_html",
+                        gif_source_id,
+                        ("UNCERTAIN_RESEARCH_ONLY", "https://tenor.com/terms"),
+                        download_time,
+                    )
+                    if entry:
+                        entry.notes = (
+                            f"tenor_search={search_url}; query={term}; "
+                            "license_uncertain=1; research_only_not_redistributable_fixture=1"
+                        )
+                        self.manifest_entries.append(entry)
+                        added_for_query += 1
+
+                time.sleep(0.3)
+
+    def download_from_reactiongifs(self, queries: List[str]):
+        """Download GIFs by scraping ReactionGIFs search HTML."""
+        logger.info(f"Downloading from ReactionGIFs HTML ({len(queries)} queries)...")
+
+        max_queries = 10
+        per_query_limit = 4
+        selected_queries = list(dict.fromkeys(queries))[:max_queries]
+
+        for term in selected_queries:
+            if len(self.manifest_entries) >= self.target_count:
+                break
+
+            search_url = f"https://www.reactiongifs.com/?{urlencode({'s': term})}"
+            source_id = f"reactiongifs_html:search:{self._to_slug(term)}"
+            html = self.fetch_text(search_url, "reactiongifs_html", source_id)
+            if not html:
+                continue
+
+            gif_urls = self._extract_reactiongifs_urls(html)
+            if not gif_urls:
+                self._log_failure(
+                    search_url,
+                    "reactiongifs_html",
+                    source_id,
+                    "adapter_query_error",
+                    "No direct GIF URLs found in HTML",
+                )
+                continue
+
+            logger.info(
+                f"ReactionGIFs query '{term}': {len(gif_urls)} candidate direct GIF URLs"
+            )
+
+            added_for_query = 0
+            for idx, gif_url in enumerate(gif_urls):
+                if len(self.manifest_entries) >= self.target_count:
+                    break
+                if added_for_query >= per_query_limit:
+                    break
+
+                gif_source_id = f"reactiongifs_html:{self._to_slug(term)}:{idx:04d}"
+                start_time = time.time()
+                gif_data = self.download_gif(
+                    gif_url, "reactiongifs_html", gif_source_id
+                )
+                download_time = int((time.time() - start_time) * 1000)
+
+                if gif_data:
+                    entry = self.process_gif(
+                        gif_data,
+                        gif_url,
+                        "reactiongifs_html",
+                        gif_source_id,
+                        (
+                            "UNCERTAIN_RESEARCH_ONLY",
+                            "https://www.reactiongifs.com/",
+                        ),
+                        download_time,
+                    )
+                    if entry:
+                        entry.notes = (
+                            f"reactiongifs_search={search_url}; query={term}; "
+                            "license_uncertain=1; research_only_not_redistributable_fixture=1"
+                        )
+                        self.manifest_entries.append(entry)
+                        added_for_query += 1
+
+                time.sleep(0.3)
+
+    def download_from_wikimedia(self, queries: List[str]):
+        """Download GIFs from Wikimedia Commons.
+
+        Uses MediaWiki API `generator=search` with namespace 6 (File:).
+        Limitations:
+        - Search relevance can be noisy for broad terms.
+        - Some files omit explicit license metadata in extmetadata.
+        """
+        logger.info("Downloading from Wikimedia Commons...")
+
+        base_url = "https://commons.wikimedia.org/w/api.php"
+        per_query_limit = 6
+        max_download_attempts = 24
+        search_terms = list(dict.fromkeys(queries))[:8]
+        download_attempts = 0
+
+        for term_idx, term in enumerate(search_terms):
+            if len(self.manifest_entries) >= self.target_count:
+                break
+
+            logger.info(f"Wikimedia query: {term}")
+            downloaded_for_term = 0
+            gsrcontinue: Optional[str] = None
+
+            while (
+                downloaded_for_term < per_query_limit
+                and len(self.manifest_entries) < self.target_count
+            ):
+                params: Dict[str, Any] = {
+                    "action": "query",
+                    "format": "json",
+                    "formatversion": "2",
+                    "generator": "search",
+                    "gsrnamespace": "6",
+                    "gsrlimit": min(25, per_query_limit - downloaded_for_term),
+                    "gsrsearch": f'filetype:bitmap filemime:gif "{term}"',
+                    "prop": "imageinfo|info",
+                    "iiprop": "url|mime|extmetadata",
+                    "redirects": "1",
+                }
+                if gsrcontinue:
+                    params["gsrcontinue"] = gsrcontinue
+
+                query_url = f"{base_url}?{urlencode(params)}"
+                payload = self.fetch_json(
+                    query_url, "wikimedia", f"search_{term_idx}_{term}"
+                )
+                if not payload:
+                    break
+
+                pages = payload.get("query", {}).get("pages", [])
+                if not pages:
+                    break
+
+                for page in pages:
+                    if len(self.manifest_entries) >= self.target_count:
+                        break
+                    if download_attempts >= max_download_attempts:
+                        logger.info(
+                            "Wikimedia adapter reached attempt cap; handing off to remaining sources"
+                        )
+                        return
+
+                    title = page.get("title", "")
+                    image_info = (page.get("imageinfo") or [{}])[0]
+                    gif_url = image_info.get("url", "")
+                    mime = str(image_info.get("mime", "")).lower()
+
+                    if not gif_url:
+                        continue
+                    if mime and mime != "image/gif":
+                        continue
+                    if not title.lower().endswith(
+                        ".gif"
+                    ) and not gif_url.lower().endswith(".gif"):
+                        continue
+
+                    extmetadata = image_info.get("extmetadata") or {}
+                    license_name = self._clean_extmetadata_value(
+                        (extmetadata.get("LicenseShortName") or {}).get("value")
+                    )
+                    license_url = self._clean_extmetadata_value(
+                        (extmetadata.get("LicenseUrl") or {}).get("value")
+                    )
+
+                    wiki_title = title.replace(" ", "_")
+                    details_url = f"https://commons.wikimedia.org/wiki/{quote(wiki_title, safe=':_()/')}"
+                    if not license_url:
+                        license_url = details_url
+                    if not license_name:
+                        license_name = "UNKNOWN"
+
+                    source_id = f"wikimedia:{page.get('pageid', title)}"
+                    start_time = time.time()
+                    download_attempts += 1
+                    gif_data = self.download_gif(gif_url, "wikimedia", source_id)
+                    download_time = int((time.time() - start_time) * 1000)
+
+                    if gif_data:
+                        entry = self.process_gif(
+                            gif_data,
+                            gif_url,
+                            "wikimedia",
+                            source_id,
+                            (license_name, license_url),
+                            download_time,
+                        )
+                        if entry:
+                            entry.notes = (
+                                f"wikimedia_title={title}; details={details_url}; "
+                                "license metadata may be incomplete"
+                            )
+                            self.manifest_entries.append(entry)
+
+                    downloaded_for_term += 1
+                    time.sleep(1.0)
+
+                gsrcontinue = payload.get("continue", {}).get("gsrcontinue")
+                if not gsrcontinue:
+                    break
+
+    @staticmethod
+    def _archive_license_info(
+        doc: Dict[str, Any], item_metadata: Dict[str, Any]
+    ) -> Tuple[str, str]:
+        """Best-effort license extraction from Internet Archive metadata."""
+        license_url = (
+            str(doc.get("licenseurl", "")).strip()
+            or str(item_metadata.get("licenseurl", "")).strip()
+        )
+        rights = str(item_metadata.get("rights", "")).strip()
+
+        if rights and rights.lower() != "none":
+            license_name = rights
+        elif license_url:
+            license_name = "LICENSE_URL"
+        else:
+            license_name = "UNKNOWN"
+
+        if not license_url and rights.lower().startswith("http"):
+            license_url = rights
+
+        return license_name, license_url
 
     def download_from_archive(self):
-        """Download GIFs from Internet Archive."""
+        """Download GIFs from Internet Archive.
+
+        Uses `advancedsearch.php` for item discovery and `metadata/<identifier>` for
+        per-file enumeration.
+
+        Limitations:
+        - advancedsearch matches can include noisy/non-animated results.
+        - item-level rights/license metadata is inconsistent.
+        - pagination is intentionally bounded for practical runtime.
+        """
         logger.info("Downloading from Internet Archive...")
-        # Stub: Archive.org API is complex; for now, use direct URLs
-        # In production, would query advancedsearch.php and parse results
-        logger.info("Archive.org adapter: stubbed (requires manual curation)")
+
+        base_search_url = "https://archive.org/advancedsearch.php"
+        rows = 25
+        max_pages = 4
+        max_gifs_per_item = 2
+
+        for page in range(1, max_pages + 1):
+            if len(self.manifest_entries) >= self.target_count:
+                break
+
+            query = (
+                "(mediatype:image OR mediatype:movies) AND "
+                '(format:"Animated GIF" OR format:GIF)'
+            )
+            params = {
+                "q": query,
+                "fl[]": ["identifier", "title", "licenseurl"],
+                "sort[]": ["downloads desc"],
+                "rows": rows,
+                "page": page,
+                "output": "json",
+            }
+            search_url = f"{base_search_url}?{urlencode(params, doseq=True)}"
+            payload = self.fetch_json(search_url, "archive", f"search_page_{page}")
+            if not payload:
+                break
+
+            docs = payload.get("response", {}).get("docs", [])
+            if not docs:
+                break
+
+            logger.info(f"Archive page={page}: {len(docs)} candidate items")
+
+            for doc in docs:
+                if len(self.manifest_entries) >= self.target_count:
+                    break
+
+                identifier = str(doc.get("identifier", "")).strip()
+                if not identifier:
+                    continue
+
+                meta_url = f"https://archive.org/metadata/{quote(identifier)}"
+                meta_payload = self.fetch_json(meta_url, "archive", identifier)
+                if not meta_payload:
+                    continue
+
+                item_metadata = meta_payload.get("metadata", {})
+                if not isinstance(item_metadata, dict):
+                    item_metadata = {}
+
+                files = meta_payload.get("files", [])
+                if not isinstance(files, list):
+                    continue
+
+                license_info = self._archive_license_info(doc, item_metadata)
+                title = str(doc.get("title", "")).strip()
+                item_details_url = f"https://archive.org/details/{quote(identifier)}"
+
+                added_for_item = 0
+                for file_entry in files:
+                    if len(self.manifest_entries) >= self.target_count:
+                        break
+                    if added_for_item >= max_gifs_per_item:
+                        break
+
+                    if not isinstance(file_entry, dict):
+                        continue
+
+                    name = str(file_entry.get("name", "")).strip()
+                    file_format = str(file_entry.get("format", "")).lower()
+                    if not name:
+                        continue
+
+                    is_gif = name.lower().endswith(".gif") or "gif" in file_format
+                    if not is_gif:
+                        continue
+
+                    file_url = f"https://archive.org/download/{quote(identifier)}/{quote(name)}"
+                    source_id = f"archive:{identifier}/{name}"
+
+                    start_time = time.time()
+                    gif_data = self.download_gif(file_url, "archive", source_id)
+                    download_time = int((time.time() - start_time) * 1000)
+
+                    if gif_data:
+                        entry = self.process_gif(
+                            gif_data,
+                            file_url,
+                            "archive",
+                            source_id,
+                            license_info,
+                            download_time,
+                        )
+                        if entry:
+                            entry.notes = (
+                                f"archive_identifier={identifier}; title={title}; "
+                                f"details={item_details_url}; search_noise_possible"
+                            )
+                            self.manifest_entries.append(entry)
+                            added_for_item += 1
+
+                    time.sleep(0.2)
 
     def save_manifest(self):
         """Save manifest in JSONL and JSON formats."""
@@ -799,7 +1386,13 @@ class CorpusDownloader:
     def run(self, sources: List[str] = None):
         """Run the full pipeline."""
         if sources is None:
-            sources = ["giphy", "tenor"]
+            sources = [
+                "giphy",
+                "tenor_html",
+                "reactiongifs_html",
+                "wikimedia",
+                "archive",
+            ]
 
         logger.info(
             f"Starting corpus download: target={self.target_count}, sources={sources}"
@@ -810,15 +1403,23 @@ class CorpusDownloader:
         for queries in self.QUERIES.values():
             all_queries.extend(queries)
 
-        # Download from sources
-        if "giphy" in sources:
-            self.download_from_giphy(all_queries)
-
-        if "tenor" in sources:
-            self.download_from_tenor(all_queries)
-
-        if "archive" in sources:
-            self.download_from_archive()
+        # Download from sources in user-specified order.
+        source_handlers = {
+            "giphy": lambda: self.download_from_giphy(all_queries),
+            "tenor_html": lambda: self.download_from_tenor_html(all_queries),
+            "tenor": lambda: self.download_from_tenor_html(all_queries),
+            "reactiongifs_html": lambda: self.download_from_reactiongifs(all_queries),
+            "wikimedia": lambda: self.download_from_wikimedia(all_queries),
+            "archive": self.download_from_archive,
+        }
+        for source in sources:
+            handler = source_handlers.get(source)
+            if handler is None:
+                logger.warning(f"Unknown source '{source}', skipping")
+                continue
+            if len(self.manifest_entries) >= self.target_count:
+                break
+            handler()
 
         # Save outputs
         self.save_manifest()
@@ -848,8 +1449,11 @@ def main():
     parser.add_argument(
         "--sources",
         nargs="+",
-        default=["giphy", "tenor"],
-        help="Sources to download from (giphy, tenor, archive)",
+        default=["giphy", "tenor_html", "reactiongifs_html", "wikimedia", "archive"],
+        help=(
+            "Sources to download from "
+            "(giphy, tenor_html, reactiongifs_html, wikimedia, archive; tenor aliases tenor_html)"
+        ),
     )
 
     args = parser.parse_args()

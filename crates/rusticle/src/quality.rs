@@ -594,7 +594,10 @@ mod tests {
             !metrics.valid,
             "buffer size mismatch should return invalid metrics"
         );
-        assert!(metrics.psnr.is_nan(), "invalid metrics should have NaN psnr");
+        assert!(
+            metrics.psnr.is_nan(),
+            "invalid metrics should have NaN psnr"
+        );
     }
 
     #[test]
@@ -661,10 +664,7 @@ mod tests {
     fn test_compare_with_dimensions_sub8x8_psnr_still_computed() {
         let img = solid_rgba(4, 4, 200, 100, 50, 255);
         let metrics = QualityMetrics::compare_with_dimensions(&img, &img, 4, 4);
-        assert!(
-            metrics.valid,
-            "valid comparison should have valid=true"
-        );
+        assert!(metrics.valid, "valid comparison should have valid=true");
         assert!(
             metrics.psnr.is_infinite(),
             "PSNR should be infinite for identical images even at 4×4"
@@ -679,7 +679,10 @@ mod tests {
         let img = solid_rgba(8, 8, 128, 64, 32, 255);
         let metrics = QualityMetrics::compare_with_dimensions(&img, &img, 8, 8);
         assert!(metrics.valid, "identical images should be valid");
-        assert!(metrics.psnr.is_infinite(), "identical should have infinite PSNR");
+        assert!(
+            metrics.psnr.is_infinite(),
+            "identical should have infinite PSNR"
+        );
         assert_eq!(metrics.ssim, 1.0, "identical should have SSIM=1.0");
     }
 

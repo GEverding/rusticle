@@ -1,4 +1,4 @@
-# Corpus Downloader Implementation (rusticle-961)
+# Corpus Downloader Implementation (rusticle-961, rusticle-dqp)
 
 ## Summary
 
@@ -68,11 +68,11 @@ Implemented lightweight GIF metadata extraction (no full decode):
 - **License**: CC0
 - **Status**: Requires real URLs or API integration
 
-#### Internet Archive (⚠️ Stubbed)
-- **Method**: Not implemented
-- **Coverage**: Potential 80+ GIFs
-- **License**: CC0 / public domain
-- **Status**: Requires `advancedsearch.php` API integration
+#### Internet Archive (✅ Implemented)
+- **Method**: `advancedsearch.php` for item discovery + `metadata/<identifier>` for file listing
+- **Coverage**: High potential (bounded by page/file limits in adapter for practical runtime)
+- **License**: Best-effort from `licenseurl` / `rights` fields
+- **Status**: Functional, no API key required
 
 #### OpenGameArt (⚠️ Stubbed)
 - **Method**: Not implemented
@@ -80,11 +80,11 @@ Implemented lightweight GIF metadata extraction (no full decode):
 - **License**: CC0 / CC-BY
 - **Status**: Requires manual curation or web scraping
 
-#### Wikimedia Commons (⚠️ Stubbed)
-- **Method**: Not implemented
-- **Coverage**: ~12 GIFs
-- **License**: CC0 / CC-BY
-- **Status**: Requires `allimages` API integration
+#### Wikimedia Commons (✅ Implemented)
+- **Method**: MediaWiki API `generator=search` (namespace 6/File) + `imageinfo`
+- **Coverage**: Good growth path with public search and pagination
+- **License**: Best-effort from extmetadata (`LicenseShortName`, `LicenseUrl`)
+- **Status**: Functional, no API key required
 
 ### 4. Manifest Schema
 
@@ -110,6 +110,7 @@ Implemented lightweight GIF metadata extraction (no full decode):
   "transparency": {
     "has_transparency": false,
     "transparent_pixel_ratio": 0.0,
+    "transparent_frame_ratio": 0.0,
     "category": "none"
   },
   "disposal": {
@@ -206,7 +207,7 @@ Failures logged to `corpus/failures.jsonl`:
   "source_url": "https://...",
   "source_type": "giphy",
   "source_id": "giphy_0000",
-  "error_type": "network_timeout|invalid_gif|metadata_extraction|duplicate_md5|save_error|download_error",
+  "error_type": "network_timeout|invalid_gif|metadata_extraction|duplicate_md5|save_error|download_error|adapter_query_error|rate_limited",
   "error_message": "...",
   "timestamp": "2026-04-21T12:34:56Z"
 }
@@ -237,6 +238,16 @@ Total failed: 2 (Tenor placeholder URLs)
 Output directory: corpus
 ```
 
+### Adapter validation batch (Wikimedia + Internet Archive)
+```
+Command:
+python3 scripts/corpus_downloader.py --output corpus_dqp_validation --target 8 --sources wikimedia archive
+
+Result (example expected):
+- manifest entries include source_type="wikimedia"
+- manifest entries include source_type="archive"
+```
+
 **Manifest structure verified**:
 - ✅ All required fields present
 - ✅ Metadata extraction accurate (frame counts, dimensions, disposal)
@@ -246,18 +257,19 @@ Output directory: corpus
 
 ## Files Changed
 
-1. **scripts/corpus_downloader.py** (NEW)
-   - 700+ lines
+1. **scripts/corpus_downloader.py**
+   - Added real Wikimedia Commons adapter
+   - Added real Internet Archive adapter
+   - Added JSON adapter fetch/retry helper + adapter failure logging
    - Core downloader implementation
    - GIF metadata extraction
    - Source adapters (Giphy, Tenor, stubs for others)
    - Manifest generation
    - Failure logging
 
-2. **docs/CORPUS_DOWNLOADER.md** (NEW)
-   - User guide
-   - Usage examples
-   - Manifest schema documentation
+2. **docs/CORPUS_DOWNLOADER.md**
+   - Updated source adapter docs (Wikimedia + Archive implemented)
+   - Documented endpoints and limitations
    - Metadata extraction details
    - Extension guide for new sources
    - Known limitations

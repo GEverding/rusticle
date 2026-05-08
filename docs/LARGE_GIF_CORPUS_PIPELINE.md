@@ -53,6 +53,12 @@ The corpus should include balanced representation across:
 
 ## 2. Source Selection & Licensing
 
+> ⚠️ **Research-only expansion note**
+>
+> To reach high-count exploratory corpora (e.g., 512+) without API keys, this pipeline may include HTML-scraped sources such as Tenor search pages and ReactionGIFs search pages.
+>
+> These scraped sources must be treated as **research-only** with **uncertain licensing** unless independently verified. Do **not** treat them as redistributable fixtures.
+
 ### Approved Sources
 
 1. **Giphy (CC0 / Public Domain)**
@@ -91,6 +97,11 @@ The corpus should include balanced representation across:
 - Store source URL and license metadata in manifest
 - Document any attribution requirements in corpus README
 - Exclude any proprietary or unclear-license content
+
+For broader research-only runs, an alternate policy is allowed:
+- Include uncertain-license entries only when marked as `UNCERTAIN_RESEARCH_ONLY`
+- Keep provenance in `source_url` + `notes` (search URL/query/context)
+- Do not ship these assets as redistributable fixtures
 
 ### Query Strategy
 
@@ -146,7 +157,7 @@ Use diverse search terms to maximize structural variety:
   "id": "corpus_001",
   "source_url": "https://media.giphy.com/media/...",
   "source_id": "giphy_abc123",
-  "source_type": "giphy|tenor|archive|opengameart|wikimedia",
+  "source_type": "giphy|tenor_html|reactiongifs_html|archive|opengameart|wikimedia",
   "local_path": "corpus/gifs/corpus_001.gif",
   "md5": "a1b2c3d4e5f6...",
   "license": "CC0|CC-BY|public-domain",
@@ -165,6 +176,7 @@ Use diverse search terms to maximize structural variety:
   "transparency": {
     "has_transparency": true,
     "transparent_pixel_ratio": 0.35,
+    "transparent_frame_ratio": 0.50,
     "category": "heavy|light|none|mixed"
   },
   "disposal": {

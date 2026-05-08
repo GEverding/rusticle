@@ -458,14 +458,17 @@ fn find_transparent_index_and_remap(
             // Prefer an index with the same color (if one exists), otherwise pick the
             // second-least-used index and copy the color from chosen_idx to it.
             let chosen_offset = (chosen_idx as usize) * 3;
-            let chosen_color = (palette[chosen_offset], palette[chosen_offset + 1], palette[chosen_offset + 2]);
+            let chosen_color = (
+                palette[chosen_offset],
+                palette[chosen_offset + 1],
+                palette[chosen_offset + 2],
+            );
 
-            let replacement_idx = if let Some(idx) = (0..palette_len)
-                .find(|&idx| {
-                    idx != chosen_idx as usize
-                        && (palette[idx * 3], palette[idx * 3 + 1], palette[idx * 3 + 2]) == chosen_color
-                })
-            {
+            let replacement_idx = if let Some(idx) = (0..palette_len).find(|&idx| {
+                idx != chosen_idx as usize
+                    && (palette[idx * 3], palette[idx * 3 + 1], palette[idx * 3 + 2])
+                        == chosen_color
+            }) {
                 // Found an index with the same color - use it
                 idx as u8
             } else {

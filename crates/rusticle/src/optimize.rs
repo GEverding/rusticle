@@ -227,7 +227,11 @@ fn optimize_frames_internal_with_canvas(
 ///
 /// Returns a vector where `reference_canvases[i]` is the canvas state before frame[i].
 /// `reference_canvases[0]` is always a transparent canvas (first frame drawn on empty).
-fn precompute_reference_canvases(frames: &[Frame], canvas_width: u16, canvas_height: u16) -> Vec<Frame> {
+fn precompute_reference_canvases(
+    frames: &[Frame],
+    canvas_width: u16,
+    canvas_height: u16,
+) -> Vec<Frame> {
     if frames.is_empty() {
         return vec![];
     }
@@ -261,14 +265,22 @@ fn precompute_reference_canvases(frames: &[Frame], canvas_width: u16, canvas_hei
                 // CRITICAL: If the frame is a subframe patch (non-zero left/top or smaller than canvas),
                 // we must composite it onto the full canvas, not store the raw patch.
                 // This ensures the next frame's reference is the correct full-canvas state.
-                let is_subframe = frame.left != 0 || frame.top != 0 || frame.width != canvas_width || frame.height != canvas_height;
-                
+                let is_subframe = frame.left != 0
+                    || frame.top != 0
+                    || frame.width != canvas_width
+                    || frame.height != canvas_height;
+
                 if is_subframe {
                     // Composite the subframe patch onto the current canvas
                     let base_canvas = displayed_canvas
                         .clone()
                         .unwrap_or_else(|| create_transparent_canvas(canvas_width, canvas_height));
-                    displayed_canvas = Some(composite_frame_onto_canvas(&base_canvas, frame, canvas_width, canvas_height));
+                    displayed_canvas = Some(composite_frame_onto_canvas(
+                        &base_canvas,
+                        frame,
+                        canvas_width,
+                        canvas_height,
+                    ));
                 } else {
                     // Full-canvas frame: store as-is
                     displayed_canvas = Some(frame.clone());
@@ -501,7 +513,7 @@ fn optimize_frame_internal_with_canvas(
     // Check if frames are subframes (not covering full canvas)
     let frame_is_subframe = frame.left != 0 || frame.top != 0;
     let prev_is_subframe = prev_frame.left != 0 || prev_frame.top != 0;
-    
+
     // Also check if frames have different dimensions (one is a subframe of the other)
     let different_dimensions = frame.width != prev_frame.width || frame.height != prev_frame.height;
 
@@ -576,7 +588,13 @@ fn optimize_subframe_overlapping(
     }
 
     // Find diff in overlapping region
-    let diff_rect = match find_diff_bounding_box(&prev_overlap, &frame_overlap, overlap_width, overlap_height, threshold) {
+    let diff_rect = match find_diff_bounding_box(
+        &prev_overlap,
+        &frame_overlap,
+        overlap_width,
+        overlap_height,
+        threshold,
+    ) {
         Some(rect) => rect,
         None => {
             // Overlapping regions are identical - check if we can safely collapse to minimal 1x1 transparent.
@@ -649,7 +667,7 @@ fn optimize_subframe_overlapping(
         Frame {
             pixels: new_pixels,
             delay: frame.delay,
-            dispose: frame.dispose,  // Preserve original disposal method
+            dispose: frame.dispose, // Preserve original disposal method
             local_palette: None,
             left: overlap_left + diff_rect.left,
             top: overlap_top + diff_rect.top,
@@ -659,7 +677,7 @@ fn optimize_subframe_overlapping(
     } else {
         // Mark unchanged pixels in overlapping region, preserve disposal
         let mut optimized = frame.clone();
-        
+
         // Mark unchanged pixels in the overlapping region
         for y in 0..overlap_height {
             for x in 0..overlap_width {
@@ -695,8 +713,6 @@ fn optimize_subframe_overlapping(
         optimized
     }
 }
-
-
 
 /// Extract sub-frame at diff_rect and mark unchanged pixels transparent.
 ///
@@ -741,7 +757,7 @@ fn extract_and_optimize_subframe(
     Frame {
         pixels: new_pixels,
         delay: frame.delay,
-        dispose: frame.dispose,  // Preserve original disposal method
+        dispose: frame.dispose, // Preserve original disposal method
         local_palette: None,
         left: diff_rect.left,
         top: diff_rect.top,
@@ -1335,17 +1351,25 @@ mod tests {
         // Apply lossy with quality 80 (threshold = 4)
         // Pixel diff is 1 in red channel, which is <= 4, so should be marked transparent
         let lossy = gif.lossy(80);
-        
+
         // First frame should be unchanged (first frames are never optimized)
         assert_eq!(lossy.frames[0].width, 4);
         assert_eq!(lossy.frames[0].height, 4);
-        
+
         // Second frame should have pixels marked transparent due to lossy compression
         // The diff is small (1 in red), so with threshold 4, pixels should be transparent
-        assert_eq!(lossy.frames[1].pixels[3], 0, "Pixel should be transparent after lossy compression");
-        
+        assert_eq!(
+            lossy.frames[1].pixels[3], 0,
+            "Pixel should be transparent after lossy compression"
+        );
+
         // Frame should be a subframe (not full canvas)
-        assert!(lossy.frames[1].width < 4 || lossy.frames[1].height < 4 || lossy.frames[1].left != 0 || lossy.frames[1].top != 0);
+        assert!(
+            lossy.frames[1].width < 4
+                || lossy.frames[1].height < 4
+                || lossy.frames[1].left != 0
+                || lossy.frames[1].top != 0
+        );
     }
 
     #[test]
@@ -1384,29 +1408,39 @@ mod tests {
 
         // First: optimize with O3 (creates subframes via cropping, lossless)
         let optimized = gif.optimize(OptLevel::O3);
-        
+
         // Verify that O3 created a subframe (cropped to diff region)
         // The second frame should be smaller than 4x4
         assert!(
             optimized.frames[1].width < 4 || optimized.frames[1].height < 4,
             "O3 should create subframes via cropping"
         );
-        
+
         // After O3 (lossless), the changed pixel should still be opaque
         // because diff=2 > threshold=0
-        let o3_has_opaque = optimized.frames[1].pixels.iter().skip(3).step_by(4).any(|&a| a == 255);
+        let o3_has_opaque = optimized.frames[1]
+            .pixels
+            .iter()
+            .skip(3)
+            .step_by(4)
+            .any(|&a| a == 255);
         assert!(
             o3_has_opaque,
             "O3 (lossless) should preserve opaque pixels with diff > 0"
         );
-        
+
         // Now apply lossy(80) - this should mark the small diff transparent
         // lossy(80) has threshold = (100-80)*20/100 = 4
         // diff=2 <= 4, so the pixel should become transparent
         let lossy = optimized.lossy(80);
-        
+
         // The lossy result should have some transparent pixels
-        let has_transparent = lossy.frames[1].pixels.iter().skip(3).step_by(4).any(|&a| a == 0);
+        let has_transparent = lossy.frames[1]
+            .pixels
+            .iter()
+            .skip(3)
+            .step_by(4)
+            .any(|&a| a == 0);
         assert!(
             has_transparent,
             "Lossy(80) should mark pixels with diff <= 4 as transparent"
@@ -1447,7 +1481,7 @@ mod tests {
         };
 
         let optimized = gif.optimize(OptLevel::O3);
-        
+
         // Even though O3 created a subframe, disposal method should be preserved
         assert_eq!(optimized.frames[1].dispose, DisposalMethod::Background);
     }
@@ -1545,10 +1579,8 @@ mod tests {
     fn make_canvas_frame(color: [u8; 4], dispose: DisposalMethod) -> Frame {
         Frame {
             pixels: vec![
-                color[0], color[1], color[2], color[3],
-                color[0], color[1], color[2], color[3],
-                color[0], color[1], color[2], color[3],
-                color[0], color[1], color[2], color[3],
+                color[0], color[1], color[2], color[3], color[0], color[1], color[2], color[3],
+                color[0], color[1], color[2], color[3], color[0], color[1], color[2], color[3],
             ],
             delay: Duration::from_millis(100),
             dispose,
@@ -2373,7 +2405,8 @@ mod tests {
         // Patch pixel at (2,2): must be opaque under O1 (diff=6 > threshold=0)
         let patch_idx = (2 * 8 + 2) * 4;
         assert_eq!(
-            o1_frame1.pixels[patch_idx + 3], 255,
+            o1_frame1.pixels[patch_idx + 3],
+            255,
             "O1: patch pixel at (2,2) must be opaque — diff=6 exceeds threshold=0"
         );
         // Non-patch pixel at (0,0): must be transparent under O1 (identical to prev)
@@ -2676,13 +2709,11 @@ mod tests {
 
         // O1 frame[1]: patch pixels (diff=6 > 0) must be opaque
         let o1_f1 = &o1.frames[1];
-        assert_eq!(
-            o1_f1.width, cw,
-            "O1 frame[1] must not be cropped"
-        );
+        assert_eq!(o1_f1.width, cw, "O1 frame[1] must not be cropped");
         let patch_idx = (2 * cw as usize + 2) * 4;
         assert_eq!(
-            o1_f1.pixels[patch_idx + 3], 255,
+            o1_f1.pixels[patch_idx + 3],
+            255,
             "O1 frame[1]: patch pixel at (2,2) must be opaque (diff=6 > threshold=0)"
         );
 
@@ -2690,19 +2721,18 @@ mod tests {
         // Reference for frame[2] = frame[1] displayed canvas (patch_color at patch region)
         // frame[2] patch pixels = base, which differs from patch_color by 6 → opaque
         let o1_f2 = &o1.frames[2];
+        assert_eq!(o1_f2.width, cw, "O1 frame[2] must not be cropped");
         assert_eq!(
-            o1_f2.width, cw,
-            "O1 frame[2] must not be cropped"
-        );
-        assert_eq!(
-            o1_f2.pixels[patch_idx + 3], 255,
+            o1_f2.pixels[patch_idx + 3],
+            255,
             "O1 frame[2]: patch pixel at (2,2) must be opaque (changed back from patch_color)"
         );
 
         // Non-patch pixels in frame[2] must be transparent (identical to frame[1] base)
         let non_patch_idx = 0; // pixel (0,0) is not in patch
         assert_eq!(
-            o1_f2.pixels[non_patch_idx + 3], 0,
+            o1_f2.pixels[non_patch_idx + 3],
+            0,
             "O1 frame[2]: non-patch pixel at (0,0) must be transparent (unchanged)"
         );
     }
