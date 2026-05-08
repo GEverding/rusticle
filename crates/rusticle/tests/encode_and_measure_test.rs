@@ -1,3 +1,5 @@
+#![cfg(feature = "research")]
+
 //! Integration tests for encode-and-measure functionality.
 
 use rusticle::{

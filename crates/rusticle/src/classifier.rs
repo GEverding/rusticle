@@ -74,6 +74,7 @@
 
 use crate::adaptive_ir::CanonicalSequence;
 use crate::profiler::{profile_canonical_sequence, GifProfile};
+use std::fmt;
 
 /// Optimizer path decision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,7 +105,66 @@ pub struct ClassificationResult {
     /// Feature values used in classification.
     pub features: ClassificationFeatures,
     /// Reasons why this path was selected.
-    pub reasons: Vec<String>,
+    pub reasons: Vec<ClassificationReason>,
+}
+
+/// Reason a path was selected.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ClassificationReason {
+    /// Transparent GCE was present.
+    HasTransparentGce,
+    /// Keep/None ratio was below the Path A threshold.
+    KeepNoneDisposalRatioBelow { ratio: f32 },
+    /// Keep/None ratio met the Path A threshold.
+    KeepNoneDisposalRatioAtLeast { ratio: f32 },
+    /// Palette stability was below the Path A threshold.
+    PaletteStabilityBelow { stability: f32 },
+    /// Palette stability met the Path A threshold.
+    PaletteStabilityAtLeast { stability: f32 },
+    /// Changed-area ratio was above the Path A threshold.
+    MedianChangedAreaRatioAbove { ratio: f32 },
+    /// Changed-area ratio met the Path A threshold.
+    MedianChangedAreaRatioAtMost { ratio: f32 },
+    /// All criteria were met.
+    AllCriteriaMet,
+    /// Not all criteria were met.
+    NotAllCriteriaMet,
+}
+
+impl fmt::Display for ClassificationReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::HasTransparentGce => write!(f, "Has transparent GCE → Path B"),
+            Self::KeepNoneDisposalRatioBelow { ratio } => {
+                write!(
+                    f,
+                    "Keep/None disposal ratio {:.1}% < 90% → Path B",
+                    ratio * 100.0
+                )
+            }
+            Self::KeepNoneDisposalRatioAtLeast { ratio } => {
+                write!(f, "Keep/None disposal ratio {:.1}% ≥ 90% ✓", ratio * 100.0)
+            }
+            Self::PaletteStabilityBelow { stability } => {
+                write!(
+                    f,
+                    "Palette stability {:.1}% < 80% → Path B",
+                    stability * 100.0
+                )
+            }
+            Self::PaletteStabilityAtLeast { stability } => {
+                write!(f, "Palette stability {:.1}% ≥ 80% ✓", stability * 100.0)
+            }
+            Self::MedianChangedAreaRatioAbove { ratio } => {
+                write!(f, "Median changed-area ratio {:.2} > 0.6 → Path B", ratio)
+            }
+            Self::MedianChangedAreaRatioAtMost { ratio } => {
+                write!(f, "Median changed-area ratio {:.2} ≤ 0.6 ✓", ratio)
+            }
+            Self::AllCriteriaMet => write!(f, "All criteria met → Path A"),
+            Self::NotAllCriteriaMet => write!(f, "Not all criteria met → Path B"),
+        }
+    }
 }
 
 /// Feature values extracted during classification.
@@ -222,65 +282,59 @@ fn extract_features(seq: &CanonicalSequence, profile: &GifProfile) -> Classifica
 /// Decide which path to use based on extracted features.
 ///
 /// Returns the selected path and a list of reasons explaining the decision.
-fn decide_path(features: &ClassificationFeatures) -> (OptimizerPath, Vec<String>) {
+fn decide_path(features: &ClassificationFeatures) -> (OptimizerPath, Vec<ClassificationReason>) {
     let mut reasons = Vec::new();
     let mut path_a_eligible = true;
 
     // Criterion 1: No transparent GCEs
     if features.has_transparent_gce {
-        reasons.push("Has transparent GCE → Path B".to_string());
+        reasons.push(ClassificationReason::HasTransparentGce);
         path_a_eligible = false;
     } else {
-        reasons.push("No transparent GCE ✓".to_string());
+        // Kept implicit in the typed reason bag.
     }
 
     // Criterion 2: ≥90% frames use Keep or None disposal
     if features.keep_none_disposal_ratio < 0.9 {
-        reasons.push(format!(
-            "Keep/None disposal ratio {:.1}% < 90% → Path B",
-            features.keep_none_disposal_ratio * 100.0
-        ));
+        reasons.push(ClassificationReason::KeepNoneDisposalRatioBelow {
+            ratio: features.keep_none_disposal_ratio,
+        });
         path_a_eligible = false;
     } else {
-        reasons.push(format!(
-            "Keep/None disposal ratio {:.1}% ≥ 90% ✓",
-            features.keep_none_disposal_ratio * 100.0
-        ));
+        reasons.push(ClassificationReason::KeepNoneDisposalRatioAtLeast {
+            ratio: features.keep_none_disposal_ratio,
+        });
     }
 
     // Criterion 3: Global palette or ≥80% palette stability
     if features.palette_stability < 0.8 {
-        reasons.push(format!(
-            "Palette stability {:.1}% < 80% → Path B",
-            features.palette_stability * 100.0
-        ));
+        reasons.push(ClassificationReason::PaletteStabilityBelow {
+            stability: features.palette_stability,
+        });
         path_a_eligible = false;
     } else {
-        reasons.push(format!(
-            "Palette stability {:.1}% ≥ 80% ✓",
-            features.palette_stability * 100.0
-        ));
+        reasons.push(ClassificationReason::PaletteStabilityAtLeast {
+            stability: features.palette_stability,
+        });
     }
 
     // Criterion 4: Median changed-area ratio ≤ 0.6
     if features.median_changed_area_ratio > 0.6 {
-        reasons.push(format!(
-            "Median changed-area ratio {:.2} > 0.6 → Path B",
-            features.median_changed_area_ratio
-        ));
+        reasons.push(ClassificationReason::MedianChangedAreaRatioAbove {
+            ratio: features.median_changed_area_ratio,
+        });
         path_a_eligible = false;
     } else {
-        reasons.push(format!(
-            "Median changed-area ratio {:.2} ≤ 0.6 ✓",
-            features.median_changed_area_ratio
-        ));
+        reasons.push(ClassificationReason::MedianChangedAreaRatioAtMost {
+            ratio: features.median_changed_area_ratio,
+        });
     }
 
     let path = if path_a_eligible {
-        reasons.push("All criteria met → Path A".to_string());
+        reasons.push(ClassificationReason::AllCriteriaMet);
         OptimizerPath::PathA
     } else {
-        reasons.push("Not all criteria met → Path B".to_string());
+        reasons.push(ClassificationReason::NotAllCriteriaMet);
         OptimizerPath::PathB
     };
 
@@ -565,7 +619,10 @@ mod tests {
         let result = classify_sequence(&seq).expect("classification failed");
         assert!(!result.reasons.is_empty(), "Reasons should be populated");
         assert!(
-            result.reasons.iter().any(|r| r.contains("Path A")),
+            result
+                .reasons
+                .iter()
+                .any(|r| matches!(r, ClassificationReason::AllCriteriaMet)),
             "Should have Path A decision reason"
         );
     }

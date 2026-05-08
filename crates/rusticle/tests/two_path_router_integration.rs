@@ -1,3 +1,5 @@
+#![cfg(feature = "research")]
+
 //! Integration tests for two-path router.
 //!
 //! Tests covering:
@@ -7,9 +9,7 @@
 //! - Fallback works when Path A fails
 //! - Telemetry is emitted correctly
 
-use rusticle::{
-    route_optimize, Gif, OptimizerStrategy, OptLevel, TwoPathConfig,
-};
+use rusticle::{route_optimize, Gif, OptLevel, OptimizerStrategy, TwoPathConfig};
 use std::time::Duration;
 
 fn make_test_gif(width: u16, height: u16, frame_count: usize) -> Gif {
@@ -90,8 +90,14 @@ fn test_auto_strategy_routes_correctly() {
     let result = result.unwrap();
     assert!(!result.frames.is_empty(), "Should produce frames");
     assert_eq!(result.telemetry.strategy, OptimizerStrategy::Auto);
-    assert!(result.telemetry.selected_path.is_some(), "Should select a path");
-    assert!(result.telemetry.classification.is_some(), "Should have classification");
+    assert!(
+        result.telemetry.selected_path.is_some(),
+        "Should select a path"
+    );
+    assert!(
+        result.telemetry.classification.is_some(),
+        "Should have classification"
+    );
 }
 
 #[test]
@@ -155,7 +161,10 @@ fn test_telemetry_emission() {
     // Telemetry should have been emitted to stderr (we can't easily capture that here,
     // but we can verify the structure is populated)
     let classification = result.telemetry.classification.unwrap();
-    assert!(!classification.reasons.is_empty(), "Should have classification reasons");
+    assert!(
+        !classification.reasons.is_empty(),
+        "Should have classification reasons"
+    );
 }
 
 #[test]
@@ -175,14 +184,14 @@ fn test_all_strategies_produce_encodable_output() {
         };
 
         let result = route_optimize(&gif, OptLevel::O3, config);
-        assert!(
-            result.is_ok(),
-            "Strategy {:?} should succeed",
-            strategy
-        );
+        assert!(result.is_ok(), "Strategy {:?} should succeed", strategy);
 
         let result = result.unwrap();
-        assert!(!result.frames.is_empty(), "Should produce frames for {:?}", strategy);
+        assert!(
+            !result.frames.is_empty(),
+            "Should produce frames for {:?}",
+            strategy
+        );
 
         // Verify frames have valid pixel data
         for frame in &result.frames {
@@ -220,7 +229,10 @@ fn test_path_a_fallback_on_error() {
     assert!(result.is_ok(), "Should handle Path A gracefully");
 
     let result = result.unwrap();
-    assert!(!result.frames.is_empty(), "Should produce frames even if Path A fails");
+    assert!(
+        !result.frames.is_empty(),
+        "Should produce frames even if Path A fails"
+    );
 }
 
 #[test]

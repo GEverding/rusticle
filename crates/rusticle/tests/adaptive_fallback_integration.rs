@@ -1,3 +1,5 @@
+#![cfg(feature = "research")]
+
 //! Integration tests for adaptive fallback and telemetry handling.
 //!
 //! These tests verify that:

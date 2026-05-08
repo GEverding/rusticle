@@ -161,7 +161,10 @@ pub struct FrameDecision {
     /// Primary reason code for the decision.
     pub reason: DecisionReason,
 
-    /// Explanation text (human-readable).
+    /// Explanation text (human-readable free-form telemetry).
+    ///
+    /// Kept as `String` because this field carries narrative debug context, not a fixed
+    /// reason code.
     pub explanation: String,
 }
 

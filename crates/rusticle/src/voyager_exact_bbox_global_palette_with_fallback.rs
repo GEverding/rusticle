@@ -49,7 +49,11 @@
 //!
 //! See `docs/RESEARCH_VOYAGER_AND_TWO_PATH.md` for full context.
 
-use crate::error::{Error, Result};
+use crate::error::Result;
+use crate::gif_ops::{
+    compute_changed_bbox, derive_palette_from_rgba, extract_bbox_region,
+    find_transparent_index_and_remap,
+};
 use crate::palette_lut::PaletteLut;
 use crate::types::{DisposalMethod, Frame};
 use std::time::Duration;
@@ -159,7 +163,7 @@ impl VoyagerExactBboxGlobalPaletteFallbackBuilder {
         }
 
         // Derive global palette using imagequant
-        Self::derive_palette_from_rgba(&all_rgba)
+        derive_palette_from_rgba(&all_rgba)
     }
 
     /// Build frames with exact opaque bbox patches and fallback to full-frame when bbox is too large.
@@ -180,14 +184,8 @@ impl VoyagerExactBboxGlobalPaletteFallbackBuilder {
         let mut frames = Vec::new();
 
         // Frame 0: always full-frame
-        let frame0 = Self::quantize_frame(
-            &resized_frames[0],
-            0,
-            0,
-            canvas_width,
-            canvas_height,
-            lut,
-        )?;
+        let frame0 =
+            Self::quantize_frame(&resized_frames[0], 0, 0, canvas_width, canvas_height, lut)?;
         frames.push(frame0);
 
         // Subsequent frames: compute changed bbox and emit patches or full-frame based on threshold
@@ -196,13 +194,27 @@ impl VoyagerExactBboxGlobalPaletteFallbackBuilder {
             let curr_frame = &resized_frames[i];
 
             // Compute exact changed bbox
-            let bbox = Self::compute_changed_bbox(prev_frame, curr_frame, canvas_width, canvas_height);
+            let bbox = compute_changed_bbox(
+                &prev_frame.pixels,
+                &curr_frame.pixels,
+                canvas_width as usize,
+                canvas_height as usize,
+            );
 
-            let frame = if bbox.area == 0 {
+            let frame = if bbox.area() == 0 {
                 // Identical frames: emit 1x1 minimal patch at (0,0)
                 let pixel_at_origin = curr_frame.pixels[0..4].to_vec();
                 let (mut indices, _) = lut.map_buffer(&pixel_at_origin);
-                let transparent_idx = Self::find_transparent_index_and_remap(&pixel_at_origin, &mut indices, lut)?;
+                let mut palette_rgb: Vec<u8> = lut
+                    .palette()
+                    .iter()
+                    .flat_map(|color| color.iter().copied())
+                    .collect();
+                let transparent_idx = find_transparent_index_and_remap(
+                    &pixel_at_origin,
+                    &mut indices,
+                    &mut palette_rgb,
+                );
 
                 VoyagerExactBboxGlobalPaletteFallbackFrame {
                     indices,
@@ -214,10 +226,19 @@ impl VoyagerExactBboxGlobalPaletteFallbackBuilder {
                     width: 1,
                     height: 1,
                 }
-            } else if bbox.area > threshold_area {
+            } else if bbox.area() > threshold_area {
                 // Bbox exceeds threshold: emit full-frame instead
                 let (mut indices, _) = lut.map_buffer(&curr_frame.pixels);
-                let transparent_idx = Self::find_transparent_index_and_remap(&curr_frame.pixels, &mut indices, lut)?;
+                let mut palette_rgb: Vec<u8> = lut
+                    .palette()
+                    .iter()
+                    .flat_map(|color| color.iter().copied())
+                    .collect();
+                let transparent_idx = find_transparent_index_and_remap(
+                    &curr_frame.pixels,
+                    &mut indices,
+                    &mut palette_rgb,
+                );
 
                 VoyagerExactBboxGlobalPaletteFallbackFrame {
                     indices,
@@ -231,9 +252,16 @@ impl VoyagerExactBboxGlobalPaletteFallbackBuilder {
                 }
             } else {
                 // Bbox within threshold: emit bbox patch
-                let bbox_pixels = Self::extract_bbox_region(curr_frame, &bbox, canvas_width);
+                let bbox_pixels =
+                    extract_bbox_region(&curr_frame.pixels, canvas_width as usize, &bbox);
                 let (mut indices, _) = lut.map_buffer(&bbox_pixels);
-                let transparent_idx = Self::find_transparent_index_and_remap(&bbox_pixels, &mut indices, lut)?;
+                let mut palette_rgb: Vec<u8> = lut
+                    .palette()
+                    .iter()
+                    .flat_map(|color| color.iter().copied())
+                    .collect();
+                let transparent_idx =
+                    find_transparent_index_and_remap(&bbox_pixels, &mut indices, &mut palette_rgb);
 
                 VoyagerExactBboxGlobalPaletteFallbackFrame {
                     indices,
@@ -242,8 +270,8 @@ impl VoyagerExactBboxGlobalPaletteFallbackBuilder {
                     dispose: curr_frame.dispose,
                     left: bbox.left,
                     top: bbox.top,
-                    width: bbox.width,
-                    height: bbox.height,
+                    width: bbox.width(),
+                    height: bbox.height(),
                 }
             };
 
@@ -251,76 +279,6 @@ impl VoyagerExactBboxGlobalPaletteFallbackBuilder {
         }
 
         Ok(frames)
-    }
-
-    /// Compute exact changed bbox between two frames.
-    fn compute_changed_bbox(
-        prev_frame: &Frame,
-        curr_frame: &Frame,
-        canvas_width: u16,
-        canvas_height: u16,
-    ) -> BoundingBox {
-        let width = canvas_width as usize;
-        let height = canvas_height as usize;
-
-        let mut min_x = width as u16;
-        let mut min_y = height as u16;
-        let mut max_x = 0u16;
-        let mut max_y = 0u16;
-        let mut found_change = false;
-
-        for y in 0..height {
-            for x in 0..width {
-                let idx = (y * width + x) * 4;
-                let prev_pixel = &prev_frame.pixels[idx..idx + 4];
-                let curr_pixel = &curr_frame.pixels[idx..idx + 4];
-
-                if prev_pixel != curr_pixel {
-                    found_change = true;
-                    min_x = min_x.min(x as u16);
-                    min_y = min_y.min(y as u16);
-                    max_x = max_x.max((x + 1) as u16);
-                    max_y = max_y.max((y + 1) as u16);
-                }
-            }
-        }
-
-        if found_change {
-            BoundingBox {
-                left: min_x,
-                top: min_y,
-                width: max_x - min_x,
-                height: max_y - min_y,
-                area: ((max_x - min_x) as usize) * ((max_y - min_y) as usize),
-            }
-        } else {
-            BoundingBox {
-                left: 0,
-                top: 0,
-                width: 0,
-                height: 0,
-                area: 0,
-            }
-        }
-    }
-
-    /// Extract a bbox region from a frame as RGBA pixels.
-    fn extract_bbox_region(frame: &Frame, bbox: &BoundingBox, canvas_width: u16) -> Vec<u8> {
-        let width = bbox.width as usize;
-        let height = bbox.height as usize;
-        let mut pixels = Vec::with_capacity(width * height * 4);
-
-        for y in 0..height {
-            for x in 0..width {
-                let canvas_x = bbox.left as usize + x;
-                let canvas_y = bbox.top as usize + y;
-                let idx = (canvas_y * (canvas_width as usize) + canvas_x) * 4;
-
-                pixels.extend_from_slice(&frame.pixels[idx..idx + 4]);
-            }
-        }
-
-        pixels
     }
 
     /// Quantize a single frame using the global palette LUT.
@@ -346,7 +304,13 @@ impl VoyagerExactBboxGlobalPaletteFallbackBuilder {
         }
 
         let (mut indices, _) = lut.map_buffer(&frame.pixels);
-        let transparent_idx = Self::find_transparent_index_and_remap(&frame.pixels, &mut indices, lut)?;
+        let mut palette_rgb: Vec<u8> = lut
+            .palette()
+            .iter()
+            .flat_map(|color| color.iter().copied())
+            .collect();
+        let transparent_idx =
+            find_transparent_index_and_remap(&frame.pixels, &mut indices, &mut palette_rgb);
 
         Ok(VoyagerExactBboxGlobalPaletteFallbackFrame {
             indices,
@@ -360,126 +324,6 @@ impl VoyagerExactBboxGlobalPaletteFallbackBuilder {
         })
     }
 
-    /// Derive a 256-color palette from RGBA pixels using imagequant.
-    fn derive_palette_from_rgba(rgba_pixels: &[u8]) -> Result<Vec<u8>> {
-        // Convert raw bytes to RGBA structs
-        let rgba_data: Vec<imagequant::RGBA> = rgba_pixels
-            .chunks_exact(4)
-            .map(|chunk| imagequant::RGBA {
-                r: chunk[0],
-                g: chunk[1],
-                b: chunk[2],
-                a: chunk[3],
-            })
-            .collect();
-
-        if rgba_data.is_empty() {
-            return Ok(vec![]);
-        }
-
-        // Create imagequant attributes
-        let mut attr = imagequant::Attributes::new();
-        attr.set_max_colors(256)
-            .map_err(|e| Error::EncodeError(format!("failed to set max colors: {}", e)))?;
-        attr.set_quality(0, 100)
-            .map_err(|e| Error::EncodeError(format!("failed to set quality: {}", e)))?;
-
-        // Create image from RGBA pixels
-        let width = rgba_data.len();
-        let height = 1;
-        let mut img = attr
-            .new_image_borrowed(&rgba_data, width, height, 0.0)
-            .map_err(|e| Error::EncodeError(format!("failed to create image: {}", e)))?;
-
-        // Quantize
-        let mut result = attr
-            .quantize(&mut img)
-            .map_err(|e| Error::EncodeError(format!("failed to quantize: {}", e)))?;
-
-        // Enable dithering for better visual quality
-        result
-            .set_dithering_level(1.0)
-            .map_err(|e| Error::EncodeError(format!("failed to set dithering: {}", e)))?;
-
-        // Get palette
-        let (palette, _) = result
-            .remapped(&mut img)
-            .map_err(|e| Error::EncodeError(format!("failed to remap: {}", e)))?;
-
-        // Convert palette to flat RGB format
-        let mut palette_rgb = Vec::with_capacity(palette.len() * 3);
-        for color in palette {
-            palette_rgb.push(color.r);
-            palette_rgb.push(color.g);
-            palette_rgb.push(color.b);
-        }
-
-        Ok(palette_rgb)
-    }
-
-    /// Find transparent index and remap transparent pixels to it.
-    /// Prefers index 0 for transparency (GIF convention, better LZW compression).
-    fn find_transparent_index_and_remap(
-        rgba_pixels: &[u8],
-        indices: &mut [u8],
-        lut: &PaletteLut,
-    ) -> Result<Option<u8>> {
-        // Check if there are any transparent pixels
-        let has_transparent = rgba_pixels.chunks_exact(4).any(|p| p[3] < 128);
-
-        if !has_transparent {
-            return Ok(None);
-        }
-
-        let palette = lut.palette();
-        let palette_len = palette.len();
-
-        // Guard against empty palette
-        if palette_len == 0 {
-            return Ok(None);
-        }
-
-        // Count usage of each palette index by OPAQUE pixels only
-        let mut opaque_usage = vec![0usize; palette_len];
-        for (i, pixel) in rgba_pixels.chunks_exact(4).enumerate() {
-            if i < indices.len() && pixel[3] >= 128 {
-                opaque_usage[indices[i] as usize] += 1;
-            }
-        }
-
-        // Prefer index 0 for transparency (GIF convention)
-        let transparent_idx = if opaque_usage[0] == 0 {
-            0
-        } else {
-            if let Some(unused_offset) = opaque_usage.iter().skip(1).position(|&count| count == 0) {
-                (unused_offset + 1) as u8
-            } else if palette_len < 256 {
-                opaque_usage
-                    .iter()
-                    .enumerate()
-                    .min_by_key(|(_, &count)| count)
-                    .map(|(idx, _)| idx as u8)
-                    .unwrap_or(0)
-            } else {
-                opaque_usage
-                    .iter()
-                    .enumerate()
-                    .min_by_key(|(_, &count)| count)
-                    .map(|(idx, _)| idx as u8)
-                    .unwrap_or(0)
-            }
-        };
-
-        // Remap all transparent pixels to use the transparent index
-        for (i, pixel) in rgba_pixels.chunks_exact(4).enumerate() {
-            if i < indices.len() && pixel[3] < 128 {
-                indices[i] = transparent_idx;
-            }
-        }
-
-        Ok(Some(transparent_idx))
-    }
-
     /// Convert flat RGB palette to 3-byte color array.
     fn flat_rgb_to_palette(flat_rgb: &[u8]) -> Vec<[u8; 3]> {
         flat_rgb
@@ -487,16 +331,6 @@ impl VoyagerExactBboxGlobalPaletteFallbackBuilder {
             .map(|chunk| [chunk[0], chunk[1], chunk[2]])
             .collect()
     }
-}
-
-/// Simple bounding box structure.
-#[derive(Debug, Clone, Copy)]
-struct BoundingBox {
-    left: u16,
-    top: u16,
-    width: u16,
-    height: u16,
-    area: usize,
 }
 
 #[cfg(test)]
@@ -632,8 +466,9 @@ mod tests {
         let frame1 = create_opaque_frame(100, 100, [255, 0, 0]);
         let frame2 = create_frame_with_rect(100, 100, [255, 0, 0], 10, 10, 20, 20, [0, 255, 0]);
 
-        let repr = VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.7)
-            .expect("build failed");
+        let repr =
+            VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.7)
+                .expect("build failed");
 
         // Verify two frames
         assert_eq!(repr.frames.len(), 2);
@@ -646,7 +481,10 @@ mod tests {
         // Verify second frame is bbox patch (not full-frame)
         let vframe1 = &repr.frames[1];
         assert!(vframe1.width < 100 || vframe1.height < 100);
-        assert_eq!(vframe1.indices.len(), (vframe1.width as usize) * (vframe1.height as usize));
+        assert_eq!(
+            vframe1.indices.len(),
+            (vframe1.width as usize) * (vframe1.height as usize)
+        );
     }
 
     #[test]
@@ -657,8 +495,9 @@ mod tests {
         let frame1 = create_opaque_frame(100, 100, [255, 0, 0]);
         let frame2 = create_frame_with_rect(100, 100, [255, 0, 0], 10, 10, 80, 80, [0, 255, 0]);
 
-        let repr = VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.5)
-            .expect("build failed");
+        let repr =
+            VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.5)
+                .expect("build failed");
 
         // Verify two frames
         assert_eq!(repr.frames.len(), 2);
@@ -685,8 +524,9 @@ mod tests {
         let frame1 = create_opaque_frame(100, 100, [255, 0, 0]);
         let frame2 = create_frame_with_rect(100, 100, [255, 0, 0], 10, 10, 70, 71, [0, 255, 0]);
 
-        let repr = VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.5)
-            .expect("build failed");
+        let repr =
+            VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.5)
+                .expect("build failed");
 
         let vframe1 = &repr.frames[1];
         // Should be bbox patch, not full-frame
@@ -698,8 +538,9 @@ mod tests {
         let frame1 = create_opaque_frame(100, 100, [255, 0, 0]);
         let frame2 = create_opaque_frame(100, 100, [255, 0, 0]);
 
-        let repr = VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.7)
-            .expect("build failed");
+        let repr =
+            VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.7)
+                .expect("build failed");
 
         // Verify two frames
         assert_eq!(repr.frames.len(), 2);
@@ -723,8 +564,9 @@ mod tests {
         let frame1 = create_opaque_frame(100, 100, [255, 0, 0]);
         let frame2 = create_transparent_frame(100, 100);
 
-        let repr = VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.7)
-            .expect("build failed");
+        let repr =
+            VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.7)
+                .expect("build failed");
 
         // Verify two frames
         assert_eq!(repr.frames.len(), 2);
@@ -742,8 +584,9 @@ mod tests {
         let mut frame2 = create_opaque_frame(100, 100, [0, 255, 0]);
         frame2.delay = Duration::from_millis(300);
 
-        let repr = VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.7)
-            .expect("build failed");
+        let repr =
+            VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.7)
+                .expect("build failed");
 
         // Verify delays are preserved
         assert_eq!(repr.frames[0].delay, Duration::from_millis(200));
@@ -758,8 +601,9 @@ mod tests {
         let mut frame2 = create_opaque_frame(100, 100, [0, 255, 0]);
         frame2.dispose = DisposalMethod::Previous;
 
-        let repr = VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.7)
-            .expect("build failed");
+        let repr =
+            VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.7)
+                .expect("build failed");
 
         // Verify disposal methods are preserved
         assert_eq!(repr.frames[0].dispose, DisposalMethod::Background);
@@ -784,8 +628,9 @@ mod tests {
         let frame1 = create_opaque_frame(100, 100, [255, 0, 0]);
         let frame2 = create_opaque_frame(100, 100, [0, 255, 0]);
 
-        let repr = VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.7)
-            .expect("build failed");
+        let repr =
+            VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.7)
+                .expect("build failed");
 
         // Verify no synthetic transparency introduced
         for vframe in &repr.frames {
@@ -804,8 +649,9 @@ mod tests {
         let frame1 = create_opaque_frame(100, 100, [255, 0, 0]);
         let frame2 = create_frame_with_rect(100, 100, [255, 0, 0], 10, 10, 5, 5, [0, 255, 0]);
 
-        let repr = VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.0)
-            .expect("build failed");
+        let repr =
+            VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.0)
+                .expect("build failed");
 
         let vframe1 = &repr.frames[1];
         // Even tiny bbox should trigger full-frame with threshold 0.0
@@ -820,8 +666,9 @@ mod tests {
         let frame1 = create_opaque_frame(100, 100, [255, 0, 0]);
         let frame2 = create_frame_with_rect(100, 100, [255, 0, 0], 0, 0, 100, 100, [0, 255, 0]);
 
-        let repr = VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 1.0)
-            .expect("build failed");
+        let repr =
+            VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 1.0)
+                .expect("build failed");
 
         let vframe1 = &repr.frames[1];
         // Even full-canvas change should stay as patch with threshold 1.0

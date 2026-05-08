@@ -59,7 +59,7 @@ use crate::palette_realize::PaletteRealizer;
 use crate::palette_strategy::determine_palette_strategies;
 use crate::profiler::profile_canonical_sequence;
 use crate::sequence_optimizer::{SequenceOptimizer, SequenceOptimizerConfig};
-use crate::tier0_classifier::Tier0Classifier;
+use crate::tier0_classifier::{Tier0Classifier, Tier0Decision};
 use crate::tier1_pruning::Tier1Pruner;
 use crate::tier2_measure::MeasurementBudget;
 use crate::types::Gif;
@@ -77,7 +77,7 @@ pub struct AdaptiveConfig {
 #[derive(Debug, Clone)]
 pub struct TieredOptimizerTelemetry {
     /// Tier-0 classification decision.
-    pub tier0_decision: String,
+    pub tier0_decision: Tier0Decision,
     /// Total candidates before Tier-1 pruning.
     pub candidates_before_pruning: usize,
     /// Total candidates after Tier-1 pruning.
@@ -255,7 +255,6 @@ impl Gif {
 
         // Step 5: Tier-0 classification
         let tier0_decision = Tier0Classifier::classify(&policy_signals);
-        let tier0_name = tier0_decision.name().to_string();
 
         // Step 6: Tier-1 pruning (unless early-exit)
         let mut pruned_candidates = all_candidates.clone();
@@ -331,7 +330,7 @@ impl Gif {
 
         // Step 12: Build tiered optimizer telemetry
         let tiered_telemetry = TieredOptimizerTelemetry {
-            tier0_decision: tier0_name,
+            tier0_decision,
             candidates_before_pruning,
             candidates_after_pruning,
             tier2_measurement_ran,
@@ -360,8 +359,9 @@ impl Gif {
     }
 
     /// Internal: attempt the full adaptive encoding pipeline (telemetry only, no bytes).
-    #[allow(dead_code)]
-    fn try_adaptive_encode(&self) -> Result<(Option<String>, Option<TieredOptimizerTelemetry>)> {
+    pub fn try_adaptive_encode(
+        &self,
+    ) -> Result<(Option<String>, Option<TieredOptimizerTelemetry>)> {
         // Step 1: Build canonical IR
         let canonical_seq = CanonicalSequenceBuilder::build(self)?;
 
@@ -421,7 +421,6 @@ impl Gif {
 
         // Step 5: Tier-0 classification
         let tier0_decision = Tier0Classifier::classify(&policy_signals);
-        let tier0_name = tier0_decision.name().to_string();
 
         // Step 6: Tier-1 pruning (unless early-exit)
         let mut pruned_candidates = all_candidates.clone();
@@ -475,7 +474,7 @@ impl Gif {
 
         // Step 9: Build tiered optimizer telemetry
         let tiered_telemetry = TieredOptimizerTelemetry {
-            tier0_decision: tier0_name,
+            tier0_decision,
             candidates_before_pruning,
             candidates_after_pruning,
             tier2_measurement_ran,
@@ -609,7 +608,7 @@ impl Gif {
         let _ = writeln!(
             json,
             r#"  "tier0_decision":"{}","#,
-            tiered_telemetry.tier0_decision
+            tiered_telemetry.tier0_decision.name()
         );
         let _ = writeln!(
             json,
@@ -698,8 +697,7 @@ impl Gif {
     }
 
     /// Build telemetry JSON from adaptive decisions (legacy, without tiered info).
-    #[allow(dead_code)]
-    fn build_telemetry_json(
+    pub fn build_telemetry_json(
         sequence_decision: &crate::scoring::SequenceDecision,
         canonical_seq: &crate::adaptive_ir::CanonicalSequence,
         profile: &crate::profiler::GifProfile,
@@ -885,10 +883,12 @@ mod tests {
         assert!(!bytes.is_empty(), "encoded bytes should not be empty");
 
         let telemetry = decision.tiered_telemetry.unwrap();
-        assert!(
-            !telemetry.tier0_decision.is_empty(),
-            "tier0 decision should be set"
-        );
+        assert!(matches!(
+            telemetry.tier0_decision,
+            Tier0Decision::EarlyExitStructural
+                | Tier0Decision::NeedsTier1
+                | Tier0Decision::NeedsTier2
+        ));
         assert!(
             telemetry.candidates_before_pruning > 0,
             "should have candidates before pruning"
@@ -920,12 +920,12 @@ mod tests {
         // For opaque delta GIFs, Tier-0 should classify as early-exit-structural
         let telemetry = decision.tiered_telemetry.unwrap();
         // Note: actual classification depends on profile, but we verify the path works
-        assert!(
-            telemetry.tier0_decision == "early-exit-structural"
-                || telemetry.tier0_decision == "needs-tier1"
-                || telemetry.tier0_decision == "needs-tier2",
-            "tier0 decision should be one of the valid states"
-        );
+        assert!(matches!(
+            telemetry.tier0_decision,
+            Tier0Decision::EarlyExitStructural
+                | Tier0Decision::NeedsTier1
+                | Tier0Decision::NeedsTier2
+        ));
 
         // Verify bytes were emitted
         assert!(!bytes.is_empty(), "should emit bytes even with early-exit");

@@ -102,7 +102,13 @@ pub fn optimize_path_b_lossy(
     // Always crop to bounding box for lossy (maximize compression)
     let crop_to_bbox = true;
 
-    optimize_frames_internal_with_canvas(frames, threshold, crop_to_bbox, canvas_width, canvas_height)
+    optimize_frames_internal_with_canvas(
+        frames,
+        threshold,
+        crop_to_bbox,
+        canvas_width,
+        canvas_height,
+    )
 }
 
 /// Internal optimization with configurable threshold and cropping.
@@ -769,7 +775,7 @@ mod tests {
         // Create a sequence with transparency-heavy frames
         let frame1 = make_frame(100, 100, [255, 0, 0, 255]); // Red, opaque
         let mut frame2 = make_frame(100, 100, [0, 255, 0, 255]); // Green, different from frame1
-        // Make some pixels match frame1 (so they can be marked transparent)
+                                                                 // Make some pixels match frame1 (so they can be marked transparent)
         for i in 0..50 {
             frame2.pixels[i * 4] = 255; // Set red channel to match frame1
             frame2.pixels[i * 4 + 1] = 0; // Set green to 0
@@ -786,14 +792,20 @@ mod tests {
         // First frame should be unchanged
         assert_eq!(optimized[0].width, 100);
         // Second frame should be optimized (some pixels marked transparent where they match frame1)
-        assert!(optimized[1].pixels.iter().step_by(4).skip(3).any(|&a| a == 0));
+        assert!(optimized[1]
+            .pixels
+            .iter()
+            .step_by(4)
+            .skip(3)
+            .any(|&a| a == 0));
     }
 
     #[test]
     fn test_path_b_disposal_background_preserved() {
         // Create a sequence with Background disposal
         let frame1 = make_frame(100, 100, [255, 0, 0, 255]); // Red, opaque
-        let frame2 = make_frame_with_disposal(100, 100, [0, 255, 0, 255], DisposalMethod::Background);
+        let frame2 =
+            make_frame_with_disposal(100, 100, [0, 255, 0, 255], DisposalMethod::Background);
 
         let frames = vec![frame1, frame2];
         let config = PathBConfig::default();
@@ -862,7 +874,8 @@ mod tests {
     fn test_path_b_identical_frames_with_background_disposal_not_collapsed() {
         // Identical frames with Background disposal should NOT collapse
         let frame1 = make_frame_with_disposal(100, 100, [255, 0, 0, 255], DisposalMethod::Keep);
-        let frame2 = make_frame_with_disposal(100, 100, [255, 0, 0, 255], DisposalMethod::Background);
+        let frame2 =
+            make_frame_with_disposal(100, 100, [255, 0, 0, 255], DisposalMethod::Background);
 
         let frames = vec![frame1, frame2];
         let config = PathBConfig::default();
@@ -876,7 +889,7 @@ mod tests {
     #[test]
     fn test_path_b_o3_crops_to_bbox() {
         // O3 should crop to bounding box
-        let mut frame1 = make_frame(100, 100, [255, 0, 0, 255]);
+        let frame1 = make_frame(100, 100, [255, 0, 0, 255]);
         let mut frame2 = make_frame(100, 100, [255, 0, 0, 255]);
 
         // Make only a small region different in frame2

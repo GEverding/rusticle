@@ -1,6 +1,6 @@
-use rusticle::{
-    DisposalMethod, Frame, VoyagerExactBboxGlobalPaletteBuilder,
-};
+#![cfg(feature = "research")]
+
+use rusticle::{DisposalMethod, Frame, VoyagerExactBboxGlobalPaletteBuilder};
 use std::time::Duration;
 
 /// Create a simple test frame with opaque pixels.
@@ -99,8 +99,8 @@ fn create_transparent_frame(width: u16, height: u16) -> Frame {
 fn test_exact_bbox_global_palette_single_frame() {
     let frame = create_opaque_frame(100, 100, [255, 0, 0]);
 
-    let repr = VoyagerExactBboxGlobalPaletteBuilder::build(&[frame], 100, 100)
-        .expect("build failed");
+    let repr =
+        VoyagerExactBboxGlobalPaletteBuilder::build(&[frame], 100, 100).expect("build failed");
 
     // Verify canvas dimensions
     assert_eq!(repr.width, 100);
@@ -156,7 +156,10 @@ fn test_exact_bbox_global_palette_two_frames_with_change() {
     assert!(vframe1.top >= 10);
     assert!(vframe1.width > 0);
     assert!(vframe1.height > 0);
-    assert_eq!(vframe1.indices.len(), (vframe1.width as usize) * (vframe1.height as usize));
+    assert_eq!(
+        vframe1.indices.len(),
+        (vframe1.width as usize) * (vframe1.height as usize)
+    );
 
     // Verify global palette is derived
     assert!(!repr.global_palette.is_empty());
@@ -238,8 +241,7 @@ fn test_exact_bbox_global_palette_disposal_preserved() {
 
 #[test]
 fn test_exact_bbox_global_palette_empty_sequence() {
-    let repr = VoyagerExactBboxGlobalPaletteBuilder::build(&[], 100, 100)
-        .expect("build failed");
+    let repr = VoyagerExactBboxGlobalPaletteBuilder::build(&[], 100, 100).expect("build failed");
 
     // Verify empty sequence
     assert_eq!(repr.width, 100);
@@ -329,8 +331,8 @@ fn test_exact_bbox_global_palette_large_sequence() {
         frames.push(create_opaque_frame(100, 100, color));
     }
 
-    let repr = VoyagerExactBboxGlobalPaletteBuilder::build(&frames, 100, 100)
-        .expect("build failed");
+    let repr =
+        VoyagerExactBboxGlobalPaletteBuilder::build(&frames, 100, 100).expect("build failed");
 
     // Verify all frames are present
     assert_eq!(repr.frames.len(), 10);
@@ -355,7 +357,7 @@ fn test_exact_bbox_global_palette_bbox_geometry_accuracy() {
 
     // Verify second frame bbox
     let vframe1 = &repr.frames[1];
-    
+
     // The bbox should encompass the rectangle region (20,30) to (60,80)
     assert!(vframe1.left <= 20);
     assert!(vframe1.top <= 30);
@@ -375,7 +377,7 @@ fn test_exact_bbox_global_palette_palette_consistency() {
 
     // Verify palette is consistent across all frames
     assert!(!repr.global_palette.is_empty());
-    
+
     // All frames should use indices from the same global palette
     for vframe in &repr.frames {
         for &idx in &vframe.indices {

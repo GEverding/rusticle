@@ -1,9 +1,16 @@
+#![cfg(feature = "research")]
+
 //! Integration tests for Tier-2 bounded encode-and-measure with quality guardrails.
 
 use rusticle::{
     BoundingBox, CandidateRepresentation, CpuBudgetClass, DecisionReason, FrameDecision,
     MeasurementBudget, PaletteStrategy, QualityGuardrails, ScoreBreakdown, Tier2Measurer,
+    UncertaintyReason,
 };
+
+fn test_string() -> String {
+    "test".to_owned()
+}
 
 /// Test: Quality-risky sparse candidate is rejected even if smaller.
 #[test]
@@ -48,7 +55,7 @@ fn test_quality_risky_sparse_rejected_even_if_smaller() {
             },
         )],
         reason: DecisionReason::LowestScore,
-        explanation: "test".to_string(),
+        explanation: test_string(),
     };
 
     // Check if uncertain (should be, due to close score)
@@ -137,7 +144,7 @@ fn test_safe_opaque_lut_preserving_wins_under_guardrails() {
             },
         )],
         reason: DecisionReason::LowestScore,
-        explanation: "test".to_string(),
+        explanation: test_string(),
     };
 
     // Check if uncertain (should be, due to LUT-breaking with close preserving alternative)
@@ -147,7 +154,10 @@ fn test_safe_opaque_lut_preserving_wins_under_guardrails() {
         "Should be uncertain due to LUT-breaking with close alternative"
     );
     assert!(
-        reasons.iter().any(|r| r.contains("lut_breaking")),
+        reasons.iter().any(|r| matches!(
+            r,
+            UncertaintyReason::LutBreakingWithClosePreservingAlternative { .. }
+        )),
         "Should mention LUT-breaking reason"
     );
 
@@ -347,15 +357,14 @@ fn test_uncertainty_detection_score_gap() {
             },
         )],
         reason: DecisionReason::LowestScore,
-        explanation: "test".to_string(),
+        explanation: test_string(),
     };
 
     let (is_uncertain, reasons) = Tier2Measurer::is_uncertain(&decision_close, &guardrails);
     assert!(is_uncertain, "Should be uncertain with close score gap");
-    assert!(
-        reasons.iter().any(|r| r.contains("score_gap_small")),
-        "Should mention score gap"
-    );
+    assert!(reasons
+        .iter()
+        .any(|r| matches!(r, UncertaintyReason::ScoreGapSmall { .. })));
 
     // Wide score gap (not uncertain)
     let decision_wide = FrameDecision {
@@ -393,7 +402,7 @@ fn test_uncertainty_detection_score_gap() {
             },
         )],
         reason: DecisionReason::LowestScore,
-        explanation: "test".to_string(),
+        explanation: test_string(),
     };
 
     let (is_uncertain, _) = Tier2Measurer::is_uncertain(&decision_wide, &guardrails);

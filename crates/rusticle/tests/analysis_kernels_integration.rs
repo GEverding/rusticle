@@ -1,3 +1,5 @@
+#![cfg(feature = "research")]
+
 //! Integration tests for analysis kernels with adaptive IR.
 //!
 //! Demonstrates how SIMD analysis kernels integrate with the canonical IR

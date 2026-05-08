@@ -1,3 +1,5 @@
+#![cfg(feature = "research")]
+
 mod common;
 
 use common::create_test_gif;
@@ -328,7 +330,7 @@ fn test_adaptive_bytes_preserve_frame_geometry() {
         emit_telemetry: false,
     };
 
-    let (decision, bytes) = gif.encode_adaptive(&config).expect("Failed to encode");
+    let (_decision, bytes) = gif.encode_adaptive(&config).expect("Failed to encode");
 
     // Decode the adaptive bytes (whether from adaptive path or fallback)
     let decoded = Gif::from_bytes(&bytes).expect("Failed to decode adaptive bytes");
@@ -348,7 +350,7 @@ fn test_adaptive_bytes_preserve_frame_delays() {
         emit_telemetry: false,
     };
 
-    let (decision, bytes) = gif.encode_adaptive(&config).expect("Failed to encode");
+    let (_decision, bytes) = gif.encode_adaptive(&config).expect("Failed to encode");
 
     // Decode the adaptive bytes
     let decoded = Gif::from_bytes(&bytes).expect("Failed to decode adaptive bytes");
@@ -391,7 +393,7 @@ fn test_adaptive_bytes_are_decodable_and_valid() {
         emit_telemetry: false,
     };
 
-    let (decision, bytes) = gif.encode_adaptive(&config).expect("Failed to encode");
+    let (_decision, bytes) = gif.encode_adaptive(&config).expect("Failed to encode");
 
     // Bytes should be decodable
     let decoded = Gif::from_bytes(&bytes).expect("Failed to decode adaptive bytes");

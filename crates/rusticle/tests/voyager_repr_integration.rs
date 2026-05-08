@@ -1,3 +1,5 @@
+#![cfg(feature = "research")]
+
 use rusticle::{DisposalMethod, Frame, VoyagerBuilder};
 use std::time::Duration;
 
@@ -56,13 +58,13 @@ fn test_voyager_control_path_single_frame() {
 #[test]
 fn test_voyager_control_path_multi_frame_voyager_like() {
     // Simulate a voyager-like sequence: multiple frames with different colors
-    let frame1 = create_opaque_frame(64, 64, [255, 0, 0]);     // Red
-    let frame2 = create_opaque_frame(64, 64, [0, 255, 0]);     // Green
-    let frame3 = create_opaque_frame(64, 64, [0, 0, 255]);     // Blue
-    let frame4 = create_opaque_frame(64, 64, [255, 255, 0]);   // Yellow
+    let frame1 = create_opaque_frame(64, 64, [255, 0, 0]); // Red
+    let frame2 = create_opaque_frame(64, 64, [0, 255, 0]); // Green
+    let frame3 = create_opaque_frame(64, 64, [0, 0, 255]); // Blue
+    let frame4 = create_opaque_frame(64, 64, [255, 255, 0]); // Yellow
 
-    let repr = VoyagerBuilder::build(&[frame1, frame2, frame3, frame4], 64, 64)
-        .expect("build failed");
+    let repr =
+        VoyagerBuilder::build(&[frame1, frame2, frame3, frame4], 64, 64).expect("build failed");
 
     // Verify canvas dimensions
     assert_eq!(repr.width, 64);
@@ -77,13 +79,21 @@ fn test_voyager_control_path_multi_frame_voyager_like() {
         assert_eq!(vframe.height, 64, "frame {} height mismatch", i);
         assert_eq!(vframe.left, 0, "frame {} left mismatch", i);
         assert_eq!(vframe.top, 0, "frame {} top mismatch", i);
-        assert_eq!(vframe.indices.len(), 64 * 64, "frame {} indices length mismatch", i);
+        assert_eq!(
+            vframe.indices.len(),
+            64 * 64,
+            "frame {} indices length mismatch",
+            i
+        );
     }
 
     // Verify single global palette (not per-frame)
     assert!(!repr.global_palette.is_empty());
     let palette_colors = repr.global_palette.len() / 3;
-    assert!(palette_colors <= 256, "palette should have at most 256 colors");
+    assert!(
+        palette_colors <= 256,
+        "palette should have at most 256 colors"
+    );
 
     // Verify all indices are valid
     for vframe in &repr.frames {
@@ -112,8 +122,7 @@ fn test_voyager_control_path_preserves_timing() {
     frame3.delay = Duration::from_millis(350);
     frame3.dispose = DisposalMethod::None;
 
-    let repr = VoyagerBuilder::build(&[frame1, frame2, frame3], 50, 50)
-        .expect("build failed");
+    let repr = VoyagerBuilder::build(&[frame1, frame2, frame3], 50, 50).expect("build failed");
 
     // Verify delays are preserved
     assert_eq!(repr.frames[0].delay, Duration::from_millis(150));
@@ -148,8 +157,7 @@ fn test_voyager_control_path_output_decodable() {
     let frame2 = create_opaque_frame(32, 32, [0, 255, 0]);
     let frame3 = create_opaque_frame(32, 32, [0, 0, 255]);
 
-    let repr = VoyagerBuilder::build(&[frame1, frame2, frame3], 32, 32)
-        .expect("build failed");
+    let repr = VoyagerBuilder::build(&[frame1, frame2, frame3], 32, 32).expect("build failed");
 
     // Verify frame count matches input
     assert_eq!(repr.frames.len(), 3);

@@ -28,7 +28,8 @@
 //! - Frame geometry/disposal/delay from materialization remain intact.
 //! - Output is suitable for direct consumption by the encode path.
 
-use crate::error::{Error, Result};
+use crate::error::Result;
+use crate::gif_ops::{derive_palette_from_rgba, find_transparent_index_and_remap};
 use crate::palette_lut::PaletteLut;
 use crate::palette_strategy::PaletteStrategy;
 use crate::types::{Frame, Gif};
@@ -162,7 +163,7 @@ impl PaletteRealizer {
             vec![0, 0, 0] // Single black color
         } else {
             // Derive global palette using imagequant
-            Self::derive_palette_from_rgba(&all_rgba)?
+            derive_palette_from_rgba(&all_rgba)?
         };
 
         // Build LUT from derived palette
@@ -214,8 +215,13 @@ impl PaletteRealizer {
         let (mut indices, _stats) = lut.map_buffer(&frame.pixels);
 
         // Find and remap transparent index
+        let mut palette_rgb: Vec<u8> = lut
+            .palette()
+            .iter()
+            .flat_map(|color| color.iter().copied())
+            .collect();
         let transparent_idx =
-            Self::find_transparent_index_and_remap(&frame.pixels, &mut indices, lut)?;
+            find_transparent_index_and_remap(&frame.pixels, &mut indices, &mut palette_rgb);
 
         Ok(QuantizedFrameData {
             indices,
@@ -248,7 +254,7 @@ impl PaletteRealizer {
         }
 
         // Derive palette from this frame's pixels
-        let palette_rgb = Self::derive_palette_from_rgba(&frame.pixels)?;
+        let palette_rgb = derive_palette_from_rgba(&frame.pixels)?;
 
         // Convert to 3-byte format for LUT
         let palette_3byte = Self::flat_rgb_to_palette(&palette_rgb);
@@ -258,8 +264,13 @@ impl PaletteRealizer {
         let (mut indices, _stats) = lut.map_buffer(&frame.pixels);
 
         // Find and remap transparent index
+        let mut palette_rgb: Vec<u8> = lut
+            .palette()
+            .iter()
+            .flat_map(|color| color.iter().copied())
+            .collect();
         let transparent_idx =
-            Self::find_transparent_index_and_remap(&frame.pixels, &mut indices, &lut)?;
+            find_transparent_index_and_remap(&frame.pixels, &mut indices, &mut palette_rgb);
 
         Ok(QuantizedFrameData {
             indices,
@@ -283,63 +294,6 @@ impl PaletteRealizer {
             .par_iter()
             .map(|frame| Self::quantize_frame_with_lut(frame, lut))
             .collect()
-    }
-
-    /// Derive a 256-color palette from RGBA pixels using imagequant.
-    fn derive_palette_from_rgba(rgba_pixels: &[u8]) -> Result<Vec<u8>> {
-        // Convert raw bytes to RGBA structs
-        let rgba_data: Vec<imagequant::RGBA> = rgba_pixels
-            .chunks_exact(4)
-            .map(|chunk| imagequant::RGBA {
-                r: chunk[0],
-                g: chunk[1],
-                b: chunk[2],
-                a: chunk[3],
-            })
-            .collect();
-
-        if rgba_data.is_empty() {
-            return Ok(vec![]);
-        }
-
-        // Create imagequant attributes
-        let mut attr = imagequant::Attributes::new();
-        attr.set_max_colors(256)
-            .map_err(|e| Error::EncodeError(format!("failed to set max colors: {}", e)))?;
-        attr.set_quality(0, 100)
-            .map_err(|e| Error::EncodeError(format!("failed to set quality: {}", e)))?;
-
-        // Create image from RGBA pixels (assume square or 1D for simplicity)
-        let width = rgba_data.len();
-        let height = 1;
-        let mut img = attr
-            .new_image_borrowed(&rgba_data, width, height, 0.0)
-            .map_err(|e| Error::EncodeError(format!("failed to create image: {}", e)))?;
-
-        // Quantize
-        let mut result = attr
-            .quantize(&mut img)
-            .map_err(|e| Error::EncodeError(format!("failed to quantize: {}", e)))?;
-
-        // Enable dithering for better visual quality
-        result
-            .set_dithering_level(1.0)
-            .map_err(|e| Error::EncodeError(format!("failed to set dithering: {}", e)))?;
-
-        // Get palette
-        let (palette, _) = result
-            .remapped(&mut img)
-            .map_err(|e| Error::EncodeError(format!("failed to remap: {}", e)))?;
-
-        // Convert palette to flat RGB format
-        let mut palette_rgb = Vec::with_capacity(palette.len() * 3);
-        for color in palette {
-            palette_rgb.push(color.r);
-            palette_rgb.push(color.g);
-            palette_rgb.push(color.b);
-        }
-
-        Ok(palette_rgb)
     }
 
     /// Check palette coverage: what ratio of pixels map acceptably to the palette?
@@ -369,80 +323,6 @@ impl PaletteRealizer {
         };
 
         Ok(CoverageStats { acceptable_ratio })
-    }
-
-    /// Find transparent index and remap transparent pixels to it.
-    /// Prefers index 0 for transparency (GIF convention, better LZW compression).
-    /// If index 0 is used by opaque pixels, swaps palette entries to free it.
-    fn find_transparent_index_and_remap(
-        rgba_pixels: &[u8],
-        indices: &mut [u8],
-        lut: &PaletteLut,
-    ) -> Result<Option<u8>> {
-        // Check if there are any transparent pixels
-        let has_transparent = rgba_pixels.chunks_exact(4).any(|p| p[3] < 128);
-
-        if !has_transparent {
-            return Ok(None);
-        }
-
-        let palette = lut.palette();
-        let palette_len = palette.len();
-
-        // Guard against empty palette
-        if palette_len == 0 {
-            return Ok(None);
-        }
-
-        // Count usage of each palette index by OPAQUE pixels only
-        let mut opaque_usage = vec![0usize; palette_len];
-        for (i, pixel) in rgba_pixels.chunks_exact(4).enumerate() {
-            if i < indices.len() && pixel[3] >= 128 {
-                opaque_usage[indices[i] as usize] += 1;
-            }
-        }
-
-        // Prefer index 0 for transparency (GIF convention, better LZW compression)
-        let transparent_idx = if opaque_usage[0] == 0 {
-            // Index 0 is unused by opaque pixels - perfect!
-            0
-        } else {
-            // Index 0 is used - find an unused index to swap with
-            if let Some(unused_offset) = opaque_usage.iter().skip(1).position(|&count| count == 0) {
-                let swap_idx = (unused_offset + 1) as u8; // +1 because we skipped index 0
-
-                // Note: We cannot modify the LUT's palette here, so we just use the swap_idx
-                // The caller must handle palette swapping if needed.
-                // For now, we just use the unused index directly.
-                swap_idx
-            } else if palette_len < 256 {
-                // No unused index - would need to add new entry
-                // For now, use the least-used index
-                opaque_usage
-                    .iter()
-                    .enumerate()
-                    .min_by_key(|(_, &count)| count)
-                    .map(|(idx, _)| idx as u8)
-                    .unwrap_or(0)
-            } else {
-                // Full palette, all used - use least-used as fallback
-                opaque_usage
-                    .iter()
-                    .enumerate()
-                    .min_by_key(|(_, &count)| count)
-                    .map(|(idx, _)| idx as u8)
-                    .unwrap_or(0)
-            }
-        };
-
-        // Remap all transparent pixels to use the transparent index
-        for (i, pixel) in rgba_pixels.chunks_exact(4).enumerate() {
-            if i < indices.len() && pixel[3] < 128 {
-                indices[i] = transparent_idx;
-            }
-        }
-
-        Ok(Some(transparent_idx))
     }
 
     /// Convert flat RGB palette to 3-byte format.

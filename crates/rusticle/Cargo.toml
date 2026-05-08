@@ -20,6 +20,7 @@ exoquant = "0.2"
 
 [features]
 default = []
+research = []
 async = ["tokio"]
 serde = ["dep:serde"]
 image = ["dep:image"]

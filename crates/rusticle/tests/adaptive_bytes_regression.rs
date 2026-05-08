@@ -1,3 +1,5 @@
+#![cfg(feature = "research")]
+
 //! Regression tests: adaptive emitted bytes preserve canonical display semantics.
 //!
 //! Each test:

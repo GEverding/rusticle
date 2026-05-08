@@ -1,3 +1,5 @@
+#![cfg(feature = "research")]
+
 //! Integration tests for voyager exact bbox + global palette + fallback representation.
 
 use rusticle::VoyagerExactBboxGlobalPaletteFallbackBuilder;
@@ -16,13 +18,9 @@ fn test_fallback_repr_produces_valid_structure() {
         frame2.pixels[i] = 0;
     }
 
-    let repr = VoyagerExactBboxGlobalPaletteFallbackBuilder::build(
-        &[frame1, frame2],
-        100,
-        100,
-        0.7,
-    )
-    .expect("build failed");
+    let repr =
+        VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.7)
+            .expect("build failed");
 
     // Verify structure
     assert_eq!(repr.width, 100);
@@ -42,7 +40,10 @@ fn test_fallback_repr_produces_valid_structure() {
     // Verify second frame is bbox patch (small change)
     let frame1 = &repr.frames[1];
     assert!(frame1.width < 100 || frame1.height < 100);
-    assert_eq!(frame1.indices.len(), (frame1.width as usize) * (frame1.height as usize));
+    assert_eq!(
+        frame1.indices.len(),
+        (frame1.width as usize) * (frame1.height as usize)
+    );
 }
 
 #[test]
@@ -61,13 +62,9 @@ fn test_fallback_repr_large_change_triggers_full_frame() {
     }
 
     // Threshold 0.5 = 5000 pixels, bbox = 6400 pixels -> should trigger full-frame
-    let repr = VoyagerExactBboxGlobalPaletteFallbackBuilder::build(
-        &[frame1, frame2],
-        100,
-        100,
-        0.5,
-    )
-    .expect("build failed");
+    let repr =
+        VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.5)
+            .expect("build failed");
 
     // Verify second frame is full-frame (fallback triggered)
     let frame1 = &repr.frames[1];
@@ -94,13 +91,9 @@ fn test_fallback_repr_threshold_boundary() {
     }
 
     // Threshold 0.5 = 5000 pixels, bbox area < 5000 -> should stay as patch
-    let repr = VoyagerExactBboxGlobalPaletteFallbackBuilder::build(
-        &[frame1, frame2],
-        100,
-        100,
-        0.5,
-    )
-    .expect("build failed");
+    let repr =
+        VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.5)
+            .expect("build failed");
 
     let frame1 = &repr.frames[1];
     // Should be bbox patch, not full-frame
@@ -115,13 +108,9 @@ fn test_fallback_repr_preserves_delays() {
     let mut frame2 = make_frame(100, 100, [0, 255, 0, 255]);
     frame2.delay = Duration::from_millis(250);
 
-    let repr = VoyagerExactBboxGlobalPaletteFallbackBuilder::build(
-        &[frame1, frame2],
-        100,
-        100,
-        0.7,
-    )
-    .expect("build failed");
+    let repr =
+        VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.7)
+            .expect("build failed");
 
     assert_eq!(repr.frames[0].delay, Duration::from_millis(150));
     assert_eq!(repr.frames[1].delay, Duration::from_millis(250));
@@ -137,13 +126,9 @@ fn test_fallback_repr_preserves_disposal() {
     let mut frame2 = make_frame(100, 100, [0, 255, 0, 255]);
     frame2.dispose = DisposalMethod::Previous;
 
-    let repr = VoyagerExactBboxGlobalPaletteFallbackBuilder::build(
-        &[frame1, frame2],
-        100,
-        100,
-        0.7,
-    )
-    .expect("build failed");
+    let repr =
+        VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.7)
+            .expect("build failed");
 
     assert_eq!(repr.frames[0].dispose, DisposalMethod::Background);
     assert_eq!(repr.frames[1].dispose, DisposalMethod::Previous);
@@ -230,13 +215,9 @@ fn test_fallback_repr_different_thresholds() {
     assert_eq!(repr_low.frames[1].height, 100);
 
     // Threshold 0.6 (6000 pixels) -> should stay as patch
-    let repr_high = VoyagerExactBboxGlobalPaletteFallbackBuilder::build(
-        &[frame1, frame2],
-        100,
-        100,
-        0.6,
-    )
-    .expect("build failed");
+    let repr_high =
+        VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.6)
+            .expect("build failed");
     assert!(repr_high.frames[1].width < 100 || repr_high.frames[1].height < 100);
 }
 
@@ -273,13 +254,9 @@ fn test_fallback_repr_with_transparency() {
         frame2.pixels[i * 4 + 3] = 0; // Set alpha to 0
     }
 
-    let repr = VoyagerExactBboxGlobalPaletteFallbackBuilder::build(
-        &[frame1, frame2],
-        100,
-        100,
-        0.7,
-    )
-    .expect("build failed");
+    let repr =
+        VoyagerExactBboxGlobalPaletteFallbackBuilder::build(&[frame1, frame2], 100, 100, 0.7)
+            .expect("build failed");
 
     // Verify second frame has transparent index
     assert!(repr.frames[1].transparent_idx.is_some());

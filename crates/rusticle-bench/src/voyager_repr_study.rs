@@ -7,7 +7,7 @@ use rusticle::{
     voyager_exact_bbox_global_palette::VoyagerExactBboxGlobalPaletteBuilder,
     voyager_exact_bbox_global_palette_with_fallback::VoyagerExactBboxGlobalPaletteFallbackBuilder,
     voyager_repr::VoyagerBuilder, voyager_source_reuse::VoyagerSourceReuseBuilder, Filter, Gif,
-    OptLevel, Result,
+    OptLevel, Result, SourceReuseViability,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -22,7 +22,7 @@ pub struct CandidateResult {
     pub file: String,
     pub output_bytes: usize,
     pub runtime_ms: f64,
-    pub viability: String,
+    pub viability: SourceReuseViability,
     pub error: Option<String>,
 }
 
@@ -57,7 +57,9 @@ pub fn evaluate_file(file_path: &Path) -> Result<Vec<CandidateResult>> {
     let target_width = (gif.width as f64 * 0.5) as u32;
     let target_height = (gif.height as f64 * 0.5) as u32;
 
-    let resized = gif.clone().resize(target_width, target_height, Filter::Lanczos3)?;
+    let resized = gif
+        .clone()
+        .resize(target_width, target_height, Filter::Lanczos3)?;
 
     let mut results = Vec::new();
 
@@ -69,13 +71,14 @@ pub fn evaluate_file(file_path: &Path) -> Result<Vec<CandidateResult>> {
 
         match repr {
             Ok(repr) => {
-                let output_bytes = repr.global_palette.len() + repr.frames.iter().map(|f| f.indices.len()).sum::<usize>();
+                let output_bytes = repr.global_palette.len()
+                    + repr.frames.iter().map(|f| f.indices.len()).sum::<usize>();
                 results.push(CandidateResult {
                     candidate: "kx7_full_derived".to_string(),
                     file: file_name.clone(),
                     output_bytes,
                     runtime_ms: elapsed,
-                    viability: "viable".to_string(),
+                    viability: SourceReuseViability::Viable,
                     error: None,
                 });
             }
@@ -85,7 +88,7 @@ pub fn evaluate_file(file_path: &Path) -> Result<Vec<CandidateResult>> {
                     file: file_name.clone(),
                     output_bytes: 0,
                     runtime_ms: elapsed,
-                    viability: "failed".to_string(),
+                    viability: SourceReuseViability::Failed,
                     error: Some(e.to_string()),
                 });
             }
@@ -95,27 +98,20 @@ pub fn evaluate_file(file_path: &Path) -> Result<Vec<CandidateResult>> {
     // Candidate 2: Source-global-reuse bbox
     {
         let start = Instant::now();
-        let repr = VoyagerSourceReuseBuilder::build(&resized.frames, resized.width, resized.height, &gif);
+        let repr =
+            VoyagerSourceReuseBuilder::build(&resized.frames, resized.width, resized.height, &gif);
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
 
         match repr {
             Ok(repr) => {
-                let viability = match repr.viability {
-                    rusticle::SourceReuseViability::Viable => "viable",
-                    rusticle::SourceReuseViability::NoSourceGlobalPalette => {
-                        "no_source_palette"
-                    }
-                    rusticle::SourceReuseViability::IncompatiblePalette => {
-                        "incompatible_palette"
-                    }
-                };
-                let output_bytes = repr.global_palette.len() + repr.frames.iter().map(|f| f.indices.len()).sum::<usize>();
+                let output_bytes = repr.global_palette.len()
+                    + repr.frames.iter().map(|f| f.indices.len()).sum::<usize>();
                 results.push(CandidateResult {
                     candidate: "ku8_source_reuse".to_string(),
                     file: file_name.clone(),
                     output_bytes,
                     runtime_ms: elapsed,
-                    viability: viability.to_string(),
+                    viability: repr.viability,
                     error: None,
                 });
             }
@@ -125,7 +121,7 @@ pub fn evaluate_file(file_path: &Path) -> Result<Vec<CandidateResult>> {
                     file: file_name.clone(),
                     output_bytes: 0,
                     runtime_ms: elapsed,
-                    viability: "failed".to_string(),
+                    viability: SourceReuseViability::Failed,
                     error: Some(e.to_string()),
                 });
             }
@@ -135,18 +131,23 @@ pub fn evaluate_file(file_path: &Path) -> Result<Vec<CandidateResult>> {
     // Candidate 3: Exact bbox + derived global palette
     {
         let start = Instant::now();
-        let repr = VoyagerExactBboxGlobalPaletteBuilder::build(&resized.frames, resized.width, resized.height);
+        let repr = VoyagerExactBboxGlobalPaletteBuilder::build(
+            &resized.frames,
+            resized.width,
+            resized.height,
+        );
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
 
         match repr {
             Ok(repr) => {
-                let output_bytes = repr.global_palette.len() + repr.frames.iter().map(|f| f.indices.len()).sum::<usize>();
+                let output_bytes = repr.global_palette.len()
+                    + repr.frames.iter().map(|f| f.indices.len()).sum::<usize>();
                 results.push(CandidateResult {
                     candidate: "bts_bbox_derived".to_string(),
                     file: file_name.clone(),
                     output_bytes,
                     runtime_ms: elapsed,
-                    viability: "viable".to_string(),
+                    viability: SourceReuseViability::Viable,
                     error: None,
                 });
             }
@@ -156,7 +157,7 @@ pub fn evaluate_file(file_path: &Path) -> Result<Vec<CandidateResult>> {
                     file: file_name.clone(),
                     output_bytes: 0,
                     runtime_ms: elapsed,
-                    viability: "failed".to_string(),
+                    viability: SourceReuseViability::Failed,
                     error: Some(e.to_string()),
                 });
             }
@@ -176,13 +177,14 @@ pub fn evaluate_file(file_path: &Path) -> Result<Vec<CandidateResult>> {
 
         match repr {
             Ok(repr) => {
-                let output_bytes = repr.global_palette.len() + repr.frames.iter().map(|f| f.indices.len()).sum::<usize>();
+                let output_bytes = repr.global_palette.len()
+                    + repr.frames.iter().map(|f| f.indices.len()).sum::<usize>();
                 results.push(CandidateResult {
                     candidate: "27k_bbox_derived_fallback".to_string(),
                     file: file_name.clone(),
                     output_bytes,
                     runtime_ms: elapsed,
-                    viability: "viable".to_string(),
+                    viability: SourceReuseViability::Viable,
                     error: None,
                 });
             }
@@ -192,7 +194,7 @@ pub fn evaluate_file(file_path: &Path) -> Result<Vec<CandidateResult>> {
                     file: file_name.clone(),
                     output_bytes: 0,
                     runtime_ms: elapsed,
-                    viability: "failed".to_string(),
+                    viability: SourceReuseViability::Failed,
                     error: Some(e.to_string()),
                 });
             }
@@ -211,7 +213,7 @@ pub fn evaluate_file(file_path: &Path) -> Result<Vec<CandidateResult>> {
             file: file_name.clone(),
             output_bytes: bytes.len(),
             runtime_ms: elapsed,
-            viability: "viable".to_string(),
+            viability: SourceReuseViability::Viable,
             error: None,
         });
     }
@@ -244,7 +246,7 @@ pub fn evaluate_file(file_path: &Path) -> Result<Vec<CandidateResult>> {
                         file: file_name.clone(),
                         output_bytes: bytes.len(),
                         runtime_ms: elapsed,
-                        viability: "viable".to_string(),
+                        viability: SourceReuseViability::Viable,
                         error: None,
                     });
                 } else {
@@ -253,7 +255,7 @@ pub fn evaluate_file(file_path: &Path) -> Result<Vec<CandidateResult>> {
                         file: file_name.clone(),
                         output_bytes: 0,
                         runtime_ms: elapsed,
-                        viability: "failed".to_string(),
+                        viability: SourceReuseViability::Failed,
                         error: Some("Could not read output".to_string()),
                     });
                 }
@@ -264,7 +266,7 @@ pub fn evaluate_file(file_path: &Path) -> Result<Vec<CandidateResult>> {
                     file: file_name.clone(),
                     output_bytes: 0,
                     runtime_ms: elapsed,
-                    viability: "failed".to_string(),
+                    viability: SourceReuseViability::Failed,
                     error: Some("gifsicle not available or failed".to_string()),
                 });
             }
@@ -284,10 +286,7 @@ pub fn run_study(output_dir: &Path) -> std::io::Result<()> {
     let mut all_results = Vec::new();
 
     // Find voyager-class test files
-    let test_dirs = vec![
-        "test_gifs/holdout_suite",
-        "test_gifs/benchmark_suite",
-    ];
+    let test_dirs = vec!["test_gifs/holdout_suite", "test_gifs/benchmark_suite"];
 
     let mut test_files = Vec::new();
 
@@ -350,7 +349,7 @@ pub fn run_study(output_dir: &Path) -> std::io::Result<()> {
         entry.avg_bytes += result.output_bytes as f64;
         entry.avg_runtime_ms += result.runtime_ms;
 
-        if result.viability == "viable" {
+        if result.viability == SourceReuseViability::Viable {
             entry.viable_count += 1;
         }
     }
@@ -428,7 +427,10 @@ fn generate_report(results: &StudyResults) -> String {
         for result in file_results {
             report.push_str(&format!(
                 "| {} | {} | {:.2} | {} |\n",
-                result.candidate, result.output_bytes, result.runtime_ms, result.viability
+                result.candidate,
+                result.output_bytes,
+                result.runtime_ms,
+                result.viability.as_str()
             ));
         }
         report.push_str("\n");
@@ -440,21 +442,29 @@ fn generate_report(results: &StudyResults) -> String {
     let viable_results: Vec<_> = results
         .results
         .iter()
-        .filter(|r| r.viability == "viable")
+        .filter(|r| r.viability == SourceReuseViability::Viable)
         .collect();
 
     if !viable_results.is_empty() {
         let best_bytes = viable_results.iter().min_by_key(|r| r.output_bytes);
         let fastest = viable_results.iter().min_by(|a, b| {
-            a.runtime_ms.partial_cmp(&b.runtime_ms).unwrap_or(std::cmp::Ordering::Equal)
+            a.runtime_ms
+                .partial_cmp(&b.runtime_ms)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         if let Some(best) = best_bytes {
-            report.push_str(&format!("**Best on bytes**: {} ({} bytes avg)\n\n", best.candidate, best.output_bytes));
+            report.push_str(&format!(
+                "**Best on bytes**: {} ({} bytes avg)\n\n",
+                best.candidate, best.output_bytes
+            ));
         }
 
         if let Some(fastest) = fastest {
-            report.push_str(&format!("**Fastest**: {} ({:.2} ms avg)\n\n", fastest.candidate, fastest.runtime_ms));
+            report.push_str(&format!(
+                "**Fastest**: {} ({:.2} ms avg)\n\n",
+                fastest.candidate, fastest.runtime_ms
+            ));
         }
     }
 
@@ -470,7 +480,9 @@ fn generate_report(results: &StudyResults) -> String {
     }
 
     report.push_str("## Recommendation\n\n");
-    report.push_str("See detailed metrics above. Candidates are ranked by average bytes and runtime.\n");
+    report.push_str(
+        "See detailed metrics above. Candidates are ranked by average bytes and runtime.\n",
+    );
 
     report
 }

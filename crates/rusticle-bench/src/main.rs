@@ -20,10 +20,18 @@ use std::time::Instant;
 
 type QualityResult = (f64, f64, f64, f64, Option<f64>, Option<f64>);
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+enum Tool {
+    #[serde(rename = "rusticle")]
+    Rusticle,
+    #[serde(rename = "gifsicle")]
+    Gifsicle,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct BenchResult {
     #[serde(default = "default_tool")]
-    tool: String,
+    tool: Tool,
     commit_hash: String,
     commit_date: String,
     timestamp: String,
@@ -52,8 +60,8 @@ struct BenchResult {
     frames: usize,
 }
 
-fn default_tool() -> String {
-    "rusticle".to_string()
+fn default_tool() -> Tool {
+    Tool::Rusticle
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -225,7 +233,7 @@ fn bench_rusticle_file(path: &Path, operation: &str, category: &str) -> Option<B
         )?;
 
     Some(BenchResult {
-        tool: "rusticle".to_string(),
+        tool: Tool::Rusticle,
         commit_hash,
         commit_date,
         timestamp,
@@ -294,7 +302,7 @@ fn bench_gifsicle_file(path: &Path, operation: &str, category: &str) -> Option<B
         compute_quality_metrics(&data, &output, bench_width, bench_height)?;
 
     Some(BenchResult {
-        tool: "gifsicle".to_string(),
+        tool: Tool::Gifsicle,
         commit_hash,
         commit_date,
         timestamp,
@@ -481,8 +489,14 @@ fn main() {
         }
     }
 
-    let rust_results: Vec<&BenchResult> = results.iter().filter(|r| r.tool == "rusticle").collect();
-    let gif_results: Vec<&BenchResult> = results.iter().filter(|r| r.tool == "gifsicle").collect();
+    let rust_results: Vec<&BenchResult> = results
+        .iter()
+        .filter(|r| r.tool == Tool::Rusticle)
+        .collect();
+    let gif_results: Vec<&BenchResult> = results
+        .iter()
+        .filter(|r| r.tool == Tool::Gifsicle)
+        .collect();
 
     if rust_results.is_empty() {
         eprintln!("No benchmark results produced");

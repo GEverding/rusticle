@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use rusticle::{DisposalMethod, Frame, Gif, LoopCount};
 use std::time::Duration;
 

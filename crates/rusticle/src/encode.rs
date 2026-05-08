@@ -373,8 +373,9 @@ fn try_fast_encode(rgba_pixels: &[u8], lut: &PaletteLut) -> Option<(Vec<u8>, Vec
 }
 
 /// Find transparent index and remap transparent pixels to a dedicated palette entry.
-/// Prefers index 0 for transparency (GIF convention, better LZW compression).
-/// If index 0 is used by opaque pixels, swaps palette entries to free it.
+///
+/// Kept local because this variant mutates and may extend the palette itself so the
+/// encoder can swap entries without a separate LUT.
 fn find_transparent_index_and_remap(
     rgba_pixels: &[u8],
     indices: &mut [u8],

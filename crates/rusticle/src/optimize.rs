@@ -768,7 +768,6 @@ fn extract_and_optimize_subframe(
 
 /// Check if two pixels are similar within threshold (per-channel).
 #[inline]
-#[allow(dead_code)]
 fn pixels_similar(a: &[u8; 4], b: &[u8; 4], threshold: u8) -> bool {
     a[0].abs_diff(b[0]) <= threshold
         && a[1].abs_diff(b[1]) <= threshold
@@ -782,8 +781,8 @@ fn pixels_similar(a: &[u8; 4], b: &[u8; 4], threshold: u8) -> bool {
 /// - R: weight 0.3
 /// - G: weight 0.5
 /// - B: weight 0.2
+#[cfg(test)]
 #[inline]
-#[allow(dead_code)]
 fn colors_similar(a: &[u8; 4], b: &[u8; 4], threshold: u8) -> bool {
     // Ignore alpha channel for color comparison
     let dr = a[0].abs_diff(b[0]) as u32;
@@ -796,79 +795,6 @@ fn colors_similar(a: &[u8; 4], b: &[u8; 4], threshold: u8) -> bool {
     let weighted_distance = (dr * 3 + dg * 5 + db * 2) / 10;
 
     weighted_distance <= threshold as u32
-}
-
-/// Find bounding box of non-transparent pixels.
-/// Returns (left, top, right, bottom) or None if all pixels are transparent.
-#[allow(dead_code)]
-fn find_bounding_box(pixels: &[u8], width: usize, height: usize) -> Option<(u16, u16, u16, u16)> {
-    let mut left = width;
-    let mut top = height;
-    let mut right = 0;
-    let mut bottom = 0;
-
-    for y in 0..height {
-        for x in 0..width {
-            let pixel_idx = (y * width + x) * 4;
-            let alpha = pixels.get(pixel_idx + 3).copied().unwrap_or(0);
-
-            if alpha > 0 {
-                left = left.min(x);
-                top = top.min(y);
-                right = right.max(x);
-                bottom = bottom.max(y);
-            }
-        }
-    }
-
-    if left <= right && top <= bottom {
-        Some((
-            left as u16,
-            top as u16,
-            (right + 1) as u16,
-            (bottom + 1) as u16,
-        ))
-    } else {
-        None
-    }
-}
-
-/// Crop frame to specified bounds.
-#[allow(dead_code)]
-fn crop_frame(frame: &Frame, left: u16, top: u16, right: u16, bottom: u16) -> Frame {
-    let new_width = (right - left) as usize;
-    let new_height = (bottom - top) as usize;
-    let old_width = frame.width as usize;
-
-    let mut new_pixels = vec![0u8; new_width * new_height * 4];
-
-    for y in 0..new_height {
-        for x in 0..new_width {
-            let old_x = left as usize + x;
-            let old_y = top as usize + y;
-
-            let old_idx = (old_y * old_width + old_x) * 4;
-            let new_idx = (y * new_width + x) * 4;
-
-            if old_idx + 3 < frame.pixels.len() {
-                new_pixels[new_idx] = frame.pixels[old_idx];
-                new_pixels[new_idx + 1] = frame.pixels[old_idx + 1];
-                new_pixels[new_idx + 2] = frame.pixels[old_idx + 2];
-                new_pixels[new_idx + 3] = frame.pixels[old_idx + 3];
-            }
-        }
-    }
-
-    Frame {
-        pixels: new_pixels,
-        delay: frame.delay,
-        dispose: frame.dispose,
-        local_palette: frame.local_palette.clone(),
-        left: frame.left + left,
-        top: frame.top + top,
-        width: new_width as u16,
-        height: new_height as u16,
-    }
 }
 
 #[cfg(test)]

@@ -19,7 +19,7 @@ use std::time::Instant;
 /// Metrics for a single candidate.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CandidateMetrics {
-    pub name: String,
+    pub name: CandidateId,
     pub output_bytes: u64,
     pub runtime_ms: u64,
     pub width: u32,
@@ -30,6 +30,36 @@ pub struct CandidateMetrics {
     pub error: Option<String>,
 }
 
+/// Typed candidate identifier.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum CandidateId {
+    #[serde(rename = "rusticle_default")]
+    RusticleDefault,
+    #[serde(rename = "gifsicle_baseline")]
+    GifsicleBaseline,
+    #[serde(rename = "opaque_bbox_global")]
+    OpaqueBboxGlobal,
+    #[serde(rename = "opaque_bbox_local")]
+    OpaqueBboxLocal,
+    #[serde(rename = "transparent_bbox_local")]
+    TransparentBboxLocal,
+    #[serde(rename = "unknown")]
+    Unknown,
+}
+
+impl CandidateId {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::RusticleDefault => "rusticle_default",
+            Self::GifsicleBaseline => "gifsicle_baseline",
+            Self::OpaqueBboxGlobal => "opaque_bbox_global",
+            Self::OpaqueBboxLocal => "opaque_bbox_local",
+            Self::TransparentBboxLocal => "transparent_bbox_local",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
 /// Study results.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StudyResults {
@@ -38,7 +68,7 @@ pub struct StudyResults {
     pub target_width: u32,
     pub target_height: u32,
     pub candidates: Vec<CandidateMetrics>,
-    pub best_bytes: String,
+    pub best_bytes: CandidateId,
     pub recommendation: String,
 }
 
@@ -182,10 +212,7 @@ fn quantize_to_palette(
         .map_err(|e| format!("imagequant remap: {}", e))?;
 
     // Convert palette to flat RGB
-    let palette_rgb: Vec<u8> = palette
-        .iter()
-        .flat_map(|c| vec![c.r, c.g, c.b])
-        .collect();
+    let palette_rgb: Vec<u8> = palette.iter().flat_map(|c| vec![c.r, c.g, c.b]).collect();
 
     // Find transparent index (if any)
     let transparent_idx = None; // For now, no transparency in quantized output
@@ -195,10 +222,7 @@ fn quantize_to_palette(
 
 /// Map RGBA pixels to indices using a pre-computed palette (flat RGB).
 /// Uses simple nearest-neighbor color matching.
-fn map_rgba_to_palette(
-    rgba_pixels: &[u8],
-    palette_rgb: &[u8],
-) -> Vec<u8> {
+fn map_rgba_to_palette(rgba_pixels: &[u8], palette_rgb: &[u8]) -> Vec<u8> {
     let palette_colors: Vec<[u8; 3]> = palette_rgb
         .chunks_exact(3)
         .map(|chunk| [chunk[0], chunk[1], chunk[2]])
@@ -245,8 +269,9 @@ fn encode_gif_with_bbox_patches(
     {
         // If global palette is provided, use it for the encoder
         let encoder_palette = global_palette.clone().unwrap_or_default();
-        let mut encoder = gif::Encoder::new(&mut buffer, width as u16, height as u16, &encoder_palette)
-            .map_err(|e| format!("gif encoder creation failed: {}", e))?;
+        let mut encoder =
+            gif::Encoder::new(&mut buffer, width as u16, height as u16, &encoder_palette)
+                .map_err(|e| format!("gif encoder creation failed: {}", e))?;
 
         encoder
             .set_repeat(gif::Repeat::Infinite)
@@ -267,7 +292,7 @@ fn encode_gif_with_bbox_patches(
             if global_palette.is_none() {
                 gif_frame.palette = Some(frame_data.palette);
             }
-            
+
             if let Some(idx) = frame_data.transparent_idx {
                 gif_frame.transparent = Some(idx);
             }
@@ -320,7 +345,7 @@ pub fn candidate_rusticle_default(
     let output_bytes = bytes.len() as u64;
 
     Ok(CandidateMetrics {
-        name: "rusticle_default".to_string(),
+        name: CandidateId::RusticleDefault,
         output_bytes,
         runtime_ms: elapsed.as_millis() as u64,
         width: 160,
@@ -357,12 +382,10 @@ pub fn candidate_gifsicle_baseline(
     }
 
     let elapsed = start.elapsed();
-    let output_bytes = fs::metadata(output_path)
-        .map_err(|e| e.to_string())?
-        .len();
+    let output_bytes = fs::metadata(output_path).map_err(|e| e.to_string())?.len();
 
     Ok(CandidateMetrics {
-        name: "gifsicle_baseline".to_string(),
+        name: CandidateId::GifsicleBaseline,
         output_bytes,
         runtime_ms: elapsed.as_millis() as u64,
         width: 160,
@@ -475,12 +498,10 @@ pub fn candidate_opaque_bbox_global(
     encode_gif_with_bbox_patches(160, 120, frames_data, Some(global_palette_rgb), output_path)?;
 
     let elapsed = start.elapsed();
-    let output_bytes = fs::metadata(output_path)
-        .map_err(|e| e.to_string())?
-        .len();
+    let output_bytes = fs::metadata(output_path).map_err(|e| e.to_string())?.len();
 
     Ok(CandidateMetrics {
-        name: "opaque_bbox_global".to_string(),
+        name: CandidateId::OpaqueBboxGlobal,
         output_bytes,
         runtime_ms: elapsed.as_millis() as u64,
         width: 160,
@@ -549,7 +570,14 @@ pub fn candidate_opaque_bbox_local(
     let mut frames_data = Vec::new();
 
     for (min_x, min_y, max_x, max_y, frame_idx) in bbox_info {
-        let patch = extract_patch(&displayed_frames[frame_idx], 160, min_x, min_y, max_x, max_y);
+        let patch = extract_patch(
+            &displayed_frames[frame_idx],
+            160,
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+        );
         let patch_w = max_x - min_x;
         let patch_h = max_y - min_y;
 
@@ -572,12 +600,10 @@ pub fn candidate_opaque_bbox_local(
     encode_gif_with_bbox_patches(160, 120, frames_data, None, output_path)?;
 
     let elapsed = start.elapsed();
-    let output_bytes = fs::metadata(output_path)
-        .map_err(|e| e.to_string())?
-        .len();
+    let output_bytes = fs::metadata(output_path).map_err(|e| e.to_string())?.len();
 
     Ok(CandidateMetrics {
-        name: "opaque_bbox_local".to_string(),
+        name: CandidateId::OpaqueBboxLocal,
         output_bytes,
         runtime_ms: elapsed.as_millis() as u64,
         width: 160,
@@ -633,10 +659,7 @@ pub fn candidate_transparent_bbox_local(
             total_patch_area += area;
 
             // Count transparent pixels in patch
-            let transparent_count = patch
-                .chunks_exact(4)
-                .filter(|p| p[3] == 0)
-                .count();
+            let transparent_count = patch.chunks_exact(4).filter(|p| p[3] == 0).count();
             total_transparent += transparent_count as f64;
 
             bbox_info.push((min_x, min_y, max_x, max_y, i));
@@ -662,7 +685,14 @@ pub fn candidate_transparent_bbox_local(
     let mut frames_data = Vec::new();
 
     for (min_x, min_y, max_x, max_y, frame_idx) in bbox_info {
-        let mut patch = extract_patch(&displayed_frames[frame_idx], 160, min_x, min_y, max_x, max_y);
+        let mut patch = extract_patch(
+            &displayed_frames[frame_idx],
+            160,
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+        );
         let patch_w = max_x - min_x;
         let patch_h = max_y - min_y;
 
@@ -671,14 +701,14 @@ pub fn candidate_transparent_bbox_local(
             for x in 0..patch_w {
                 let idx = (y * patch_w + x) * 4;
                 let canvas_idx = ((min_y + y) * 160 + (min_x + x)) * 4;
-                
+
                 // Check if this pixel is unchanged from previous frame
                 if frame_idx > 0 {
                     let prev_a = displayed_frames[frame_idx - 1][canvas_idx + 3];
                     let prev_rgb = &displayed_frames[frame_idx - 1][canvas_idx..canvas_idx + 3];
                     let curr_a = displayed_frames[frame_idx][canvas_idx + 3];
                     let curr_rgb = &displayed_frames[frame_idx][canvas_idx..canvas_idx + 3];
-                    
+
                     // If unchanged, mark as transparent
                     if prev_a == curr_a && prev_rgb == curr_rgb {
                         patch[idx + 3] = 0; // Set alpha to 0
@@ -706,12 +736,10 @@ pub fn candidate_transparent_bbox_local(
     encode_gif_with_bbox_patches(160, 120, frames_data, None, output_path)?;
 
     let elapsed = start.elapsed();
-    let output_bytes = fs::metadata(output_path)
-        .map_err(|e| e.to_string())?
-        .len();
+    let output_bytes = fs::metadata(output_path).map_err(|e| e.to_string())?.len();
 
     Ok(CandidateMetrics {
-        name: "transparent_bbox_local".to_string(),
+        name: CandidateId::TransparentBboxLocal,
         output_bytes,
         runtime_ms: elapsed.as_millis() as u64,
         width: 160,
@@ -727,9 +755,7 @@ pub fn candidate_transparent_bbox_local(
 pub fn run_voyager_study(input_path: &Path, output_dir: &Path) -> Result<StudyResults, String> {
     fs::create_dir_all(output_dir).map_err(|e| e.to_string())?;
 
-    let input_bytes = fs::metadata(input_path)
-        .map_err(|e| e.to_string())?
-        .len();
+    let input_bytes = fs::metadata(input_path).map_err(|e| e.to_string())?.len();
 
     let mut candidates = Vec::new();
 
@@ -740,7 +766,7 @@ pub fn run_voyager_study(input_path: &Path, output_dir: &Path) -> Result<StudyRe
         Err(e) => {
             eprintln!("rusticle_default failed: {}", e);
             candidates.push(CandidateMetrics {
-                name: "rusticle_default".to_string(),
+                name: CandidateId::RusticleDefault,
                 output_bytes: 0,
                 runtime_ms: 0,
                 width: 160,
@@ -760,7 +786,7 @@ pub fn run_voyager_study(input_path: &Path, output_dir: &Path) -> Result<StudyRe
         Err(e) => {
             eprintln!("gifsicle_baseline failed: {}", e);
             candidates.push(CandidateMetrics {
-                name: "gifsicle_baseline".to_string(),
+                name: CandidateId::GifsicleBaseline,
                 output_bytes: 0,
                 runtime_ms: 0,
                 width: 160,
@@ -780,7 +806,7 @@ pub fn run_voyager_study(input_path: &Path, output_dir: &Path) -> Result<StudyRe
         Err(e) => {
             eprintln!("opaque_bbox_global failed: {}", e);
             candidates.push(CandidateMetrics {
-                name: "opaque_bbox_global".to_string(),
+                name: CandidateId::OpaqueBboxGlobal,
                 output_bytes: 0,
                 runtime_ms: 0,
                 width: 160,
@@ -800,7 +826,7 @@ pub fn run_voyager_study(input_path: &Path, output_dir: &Path) -> Result<StudyRe
         Err(e) => {
             eprintln!("opaque_bbox_local failed: {}", e);
             candidates.push(CandidateMetrics {
-                name: "opaque_bbox_local".to_string(),
+                name: CandidateId::OpaqueBboxLocal,
                 output_bytes: 0,
                 runtime_ms: 0,
                 width: 160,
@@ -820,7 +846,7 @@ pub fn run_voyager_study(input_path: &Path, output_dir: &Path) -> Result<StudyRe
         Err(e) => {
             eprintln!("transparent_bbox_local failed: {}", e);
             candidates.push(CandidateMetrics {
-                name: "transparent_bbox_local".to_string(),
+                name: CandidateId::TransparentBboxLocal,
                 output_bytes: 0,
                 runtime_ms: 0,
                 width: 160,
@@ -838,17 +864,23 @@ pub fn run_voyager_study(input_path: &Path, output_dir: &Path) -> Result<StudyRe
         .iter()
         .filter(|c| c.error.is_none())
         .min_by_key(|c| c.output_bytes)
-        .map(|c| c.name.clone())
-        .unwrap_or_else(|| "unknown".to_string());
+        .map(|c| c.name)
+        .unwrap_or(CandidateId::Unknown);
 
     // Analyze results to provide concrete recommendation
-    let recommendation = if best_bytes == "rusticle_default" {
-        let gifsicle = candidates.iter().find(|c| c.name == "gifsicle_baseline");
-        let rusticle = candidates.iter().find(|c| c.name == "rusticle_default");
-        
+    let recommendation = if best_bytes == CandidateId::RusticleDefault {
+        let gifsicle = candidates
+            .iter()
+            .find(|c| c.name == CandidateId::GifsicleBaseline);
+        let rusticle = candidates
+            .iter()
+            .find(|c| c.name == CandidateId::RusticleDefault);
+
         match (rusticle, gifsicle) {
             (Some(r), Some(g)) if r.error.is_none() && g.error.is_none() => {
-                let improvement = ((g.output_bytes as f64 - r.output_bytes as f64) / g.output_bytes as f64) * 100.0;
+                let improvement = ((g.output_bytes as f64 - r.output_bytes as f64)
+                    / g.output_bytes as f64)
+                    * 100.0;
                 format!(
                     "RECOMMENDATION: Stick with rusticle default path. It outperforms gifsicle by {:.1}% on this voyager file. \
                      Patch geometry shows ~57% of canvas per frame changes. No transparent bbox optimization needed for this file.",
@@ -857,13 +889,13 @@ pub fn run_voyager_study(input_path: &Path, output_dir: &Path) -> Result<StudyRe
             }
             _ => format!(
                 "Best candidate by bytes: {}. Current rusticle default is optimal.",
-                best_bytes
+                best_bytes.as_str()
             ),
         }
     } else {
         format!(
             "Best candidate by bytes: {}. Consider investigating this representation.",
-            best_bytes
+            best_bytes.as_str()
         )
     };
 

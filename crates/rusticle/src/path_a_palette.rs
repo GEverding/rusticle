@@ -45,7 +45,8 @@
 //!
 //! See `docs/RESEARCH_VOYAGER_AND_TWO_PATH.md` for full context.
 
-use crate::error::{Error, Result};
+use crate::error::Result;
+use crate::gif_ops::derive_palette_from_rgba;
 use crate::palette_lut::PaletteLut;
 use crate::path_a::PathAFrame;
 use crate::types::DisposalMethod;
@@ -162,7 +163,7 @@ impl PathAPaletteRealizer {
         }
 
         // Step 2: Derive global palette from all frames
-        let global_palette_rgb = Self::derive_global_palette(&all_rgba)?;
+        let global_palette_rgb = derive_palette_from_rgba(&all_rgba)?;
 
         // Step 3: Build LUT from global palette
         let palette_3byte = Self::flat_rgb_to_palette(&global_palette_rgb);
@@ -220,63 +221,6 @@ impl PathAPaletteRealizer {
             frames: quantized_frames,
             stats,
         })
-    }
-
-    /// Derive a global 256-color palette from all RGBA pixels.
-    fn derive_global_palette(rgba_pixels: &[u8]) -> Result<Vec<u8>> {
-        if rgba_pixels.is_empty() {
-            return Ok(vec![0, 0, 0]); // Minimal palette
-        }
-
-        // Convert raw bytes to imagequant RGBA structs
-        let rgba_data: Vec<imagequant::RGBA> = rgba_pixels
-            .chunks_exact(4)
-            .map(|chunk| imagequant::RGBA {
-                r: chunk[0],
-                g: chunk[1],
-                b: chunk[2],
-                a: chunk[3],
-            })
-            .collect();
-
-        // Create imagequant attributes
-        let mut attr = imagequant::Attributes::new();
-        attr.set_max_colors(256)
-            .map_err(|e| Error::EncodeError(format!("failed to set max colors: {}", e)))?;
-        attr.set_quality(0, 100)
-            .map_err(|e| Error::EncodeError(format!("failed to set quality: {}", e)))?;
-
-        // Create image from RGBA pixels (treat as 1D for simplicity)
-        let width = rgba_data.len();
-        let height = 1;
-        let mut img = attr
-            .new_image_borrowed(&rgba_data, width, height, 0.0)
-            .map_err(|e| Error::EncodeError(format!("failed to create image: {}", e)))?;
-
-        // Quantize
-        let mut result = attr
-            .quantize(&mut img)
-            .map_err(|e| Error::EncodeError(format!("failed to quantize: {}", e)))?;
-
-        // Enable dithering for better visual quality
-        result
-            .set_dithering_level(1.0)
-            .map_err(|e| Error::EncodeError(format!("failed to set dithering: {}", e)))?;
-
-        // Get palette
-        let (palette, _) = result
-            .remapped(&mut img)
-            .map_err(|e| Error::EncodeError(format!("failed to remap: {}", e)))?;
-
-        // Convert palette to flat RGB format
-        let mut palette_rgb = Vec::with_capacity(palette.len() * 3);
-        for color in palette {
-            palette_rgb.push(color.r);
-            palette_rgb.push(color.g);
-            palette_rgb.push(color.b);
-        }
-
-        Ok(palette_rgb)
     }
 
     /// Quantize a frame with global palette, compute quality (PSNR).
@@ -382,7 +326,7 @@ impl PathAPaletteRealizer {
         }
 
         // Derive local palette from this frame's pixels
-        let local_palette_rgb = Self::derive_global_palette(&frame.pixels)?;
+        let local_palette_rgb = derive_palette_from_rgba(&frame.pixels)?;
 
         // Convert to 3-byte format for LUT
         let palette_3byte = Self::flat_rgb_to_palette(&local_palette_rgb);

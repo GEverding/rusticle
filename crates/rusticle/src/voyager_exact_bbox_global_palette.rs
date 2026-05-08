@@ -47,7 +47,11 @@
 //!
 //! See `docs/RESEARCH_VOYAGER_AND_TWO_PATH.md` for full context.
 
-use crate::error::{Error, Result};
+use crate::error::Result;
+use crate::gif_ops::{
+    compute_changed_bbox, derive_palette_from_rgba, extract_bbox_region,
+    find_transparent_index_and_remap,
+};
 use crate::palette_lut::PaletteLut;
 use crate::types::{DisposalMethod, Frame};
 use std::time::Duration;
@@ -124,7 +128,8 @@ impl VoyagerExactBboxGlobalPaletteBuilder {
         let lut = PaletteLut::new(&palette_3byte);
 
         // Step 3: Compute exact changed bboxes and quantize frames
-        let frames = Self::build_frames_with_bboxes(resized_frames, canvas_width, canvas_height, &lut)?;
+        let frames =
+            Self::build_frames_with_bboxes(resized_frames, canvas_width, canvas_height, &lut)?;
 
         Ok(VoyagerExactBboxGlobalPaletteRepr {
             width: canvas_width,
@@ -148,7 +153,7 @@ impl VoyagerExactBboxGlobalPaletteBuilder {
         }
 
         // Derive global palette using imagequant
-        Self::derive_palette_from_rgba(&all_rgba)
+        derive_palette_from_rgba(&all_rgba)
     }
 
     /// Build frames with exact opaque bbox patches.
@@ -165,14 +170,8 @@ impl VoyagerExactBboxGlobalPaletteBuilder {
         let mut frames = Vec::new();
 
         // Frame 0: always full-frame
-        let frame0 = Self::quantize_frame(
-            &resized_frames[0],
-            0,
-            0,
-            canvas_width,
-            canvas_height,
-            lut,
-        )?;
+        let frame0 =
+            Self::quantize_frame(&resized_frames[0], 0, 0, canvas_width, canvas_height, lut)?;
         frames.push(frame0);
 
         // Subsequent frames: compute changed bbox and emit patches
@@ -181,13 +180,27 @@ impl VoyagerExactBboxGlobalPaletteBuilder {
             let curr_frame = &resized_frames[i];
 
             // Compute exact changed bbox
-            let bbox = Self::compute_changed_bbox(prev_frame, curr_frame, canvas_width, canvas_height);
+            let bbox = compute_changed_bbox(
+                &prev_frame.pixels,
+                &curr_frame.pixels,
+                canvas_width as usize,
+                canvas_height as usize,
+            );
 
-            let frame = if bbox.area == 0 {
+            let frame = if bbox.area() == 0 {
                 // Identical frames: emit 1x1 minimal patch at (0,0)
                 let pixel_at_origin = curr_frame.pixels[0..4].to_vec();
                 let (mut indices, _) = lut.map_buffer(&pixel_at_origin);
-                let transparent_idx = Self::find_transparent_index_and_remap(&pixel_at_origin, &mut indices, lut)?;
+                let mut palette_rgb: Vec<u8> = lut
+                    .palette()
+                    .iter()
+                    .flat_map(|color| color.iter().copied())
+                    .collect();
+                let transparent_idx = find_transparent_index_and_remap(
+                    &pixel_at_origin,
+                    &mut indices,
+                    &mut palette_rgb,
+                );
 
                 VoyagerExactBboxGlobalPaletteFrame {
                     indices,
@@ -201,9 +214,16 @@ impl VoyagerExactBboxGlobalPaletteBuilder {
                 }
             } else {
                 // Extract bbox region and quantize
-                let bbox_pixels = Self::extract_bbox_region(curr_frame, &bbox, canvas_width);
+                let bbox_pixels =
+                    extract_bbox_region(&curr_frame.pixels, canvas_width as usize, &bbox);
                 let (mut indices, _) = lut.map_buffer(&bbox_pixels);
-                let transparent_idx = Self::find_transparent_index_and_remap(&bbox_pixels, &mut indices, lut)?;
+                let mut palette_rgb: Vec<u8> = lut
+                    .palette()
+                    .iter()
+                    .flat_map(|color| color.iter().copied())
+                    .collect();
+                let transparent_idx =
+                    find_transparent_index_and_remap(&bbox_pixels, &mut indices, &mut palette_rgb);
 
                 VoyagerExactBboxGlobalPaletteFrame {
                     indices,
@@ -212,8 +232,8 @@ impl VoyagerExactBboxGlobalPaletteBuilder {
                     dispose: curr_frame.dispose,
                     left: bbox.left,
                     top: bbox.top,
-                    width: bbox.width,
-                    height: bbox.height,
+                    width: bbox.width(),
+                    height: bbox.height(),
                 }
             };
 
@@ -221,76 +241,6 @@ impl VoyagerExactBboxGlobalPaletteBuilder {
         }
 
         Ok(frames)
-    }
-
-    /// Compute exact changed bbox between two frames.
-    fn compute_changed_bbox(
-        prev_frame: &Frame,
-        curr_frame: &Frame,
-        canvas_width: u16,
-        canvas_height: u16,
-    ) -> BoundingBox {
-        let width = canvas_width as usize;
-        let height = canvas_height as usize;
-
-        let mut min_x = width as u16;
-        let mut min_y = height as u16;
-        let mut max_x = 0u16;
-        let mut max_y = 0u16;
-        let mut found_change = false;
-
-        for y in 0..height {
-            for x in 0..width {
-                let idx = (y * width + x) * 4;
-                let prev_pixel = &prev_frame.pixels[idx..idx + 4];
-                let curr_pixel = &curr_frame.pixels[idx..idx + 4];
-
-                if prev_pixel != curr_pixel {
-                    found_change = true;
-                    min_x = min_x.min(x as u16);
-                    min_y = min_y.min(y as u16);
-                    max_x = max_x.max((x + 1) as u16);
-                    max_y = max_y.max((y + 1) as u16);
-                }
-            }
-        }
-
-        if found_change {
-            BoundingBox {
-                left: min_x,
-                top: min_y,
-                width: max_x - min_x,
-                height: max_y - min_y,
-                area: ((max_x - min_x) as usize) * ((max_y - min_y) as usize),
-            }
-        } else {
-            BoundingBox {
-                left: 0,
-                top: 0,
-                width: 0,
-                height: 0,
-                area: 0,
-            }
-        }
-    }
-
-    /// Extract a bbox region from a frame as RGBA pixels.
-    fn extract_bbox_region(frame: &Frame, bbox: &BoundingBox, canvas_width: u16) -> Vec<u8> {
-        let width = bbox.width as usize;
-        let height = bbox.height as usize;
-        let mut pixels = Vec::with_capacity(width * height * 4);
-
-        for y in 0..height {
-            for x in 0..width {
-                let canvas_x = bbox.left as usize + x;
-                let canvas_y = bbox.top as usize + y;
-                let idx = (canvas_y * (canvas_width as usize) + canvas_x) * 4;
-
-                pixels.extend_from_slice(&frame.pixels[idx..idx + 4]);
-            }
-        }
-
-        pixels
     }
 
     /// Quantize a single frame using the global palette LUT.
@@ -316,7 +266,13 @@ impl VoyagerExactBboxGlobalPaletteBuilder {
         }
 
         let (mut indices, _) = lut.map_buffer(&frame.pixels);
-        let transparent_idx = Self::find_transparent_index_and_remap(&frame.pixels, &mut indices, lut)?;
+        let mut palette_rgb: Vec<u8> = lut
+            .palette()
+            .iter()
+            .flat_map(|color| color.iter().copied())
+            .collect();
+        let transparent_idx =
+            find_transparent_index_and_remap(&frame.pixels, &mut indices, &mut palette_rgb);
 
         Ok(VoyagerExactBboxGlobalPaletteFrame {
             indices,
@@ -330,126 +286,6 @@ impl VoyagerExactBboxGlobalPaletteBuilder {
         })
     }
 
-    /// Derive a 256-color palette from RGBA pixels using imagequant.
-    fn derive_palette_from_rgba(rgba_pixels: &[u8]) -> Result<Vec<u8>> {
-        // Convert raw bytes to RGBA structs
-        let rgba_data: Vec<imagequant::RGBA> = rgba_pixels
-            .chunks_exact(4)
-            .map(|chunk| imagequant::RGBA {
-                r: chunk[0],
-                g: chunk[1],
-                b: chunk[2],
-                a: chunk[3],
-            })
-            .collect();
-
-        if rgba_data.is_empty() {
-            return Ok(vec![]);
-        }
-
-        // Create imagequant attributes
-        let mut attr = imagequant::Attributes::new();
-        attr.set_max_colors(256)
-            .map_err(|e| Error::EncodeError(format!("failed to set max colors: {}", e)))?;
-        attr.set_quality(0, 100)
-            .map_err(|e| Error::EncodeError(format!("failed to set quality: {}", e)))?;
-
-        // Create image from RGBA pixels
-        let width = rgba_data.len();
-        let height = 1;
-        let mut img = attr
-            .new_image_borrowed(&rgba_data, width, height, 0.0)
-            .map_err(|e| Error::EncodeError(format!("failed to create image: {}", e)))?;
-
-        // Quantize
-        let mut result = attr
-            .quantize(&mut img)
-            .map_err(|e| Error::EncodeError(format!("failed to quantize: {}", e)))?;
-
-        // Enable dithering for better visual quality
-        result
-            .set_dithering_level(1.0)
-            .map_err(|e| Error::EncodeError(format!("failed to set dithering: {}", e)))?;
-
-        // Get palette
-        let (palette, _) = result
-            .remapped(&mut img)
-            .map_err(|e| Error::EncodeError(format!("failed to remap: {}", e)))?;
-
-        // Convert palette to flat RGB format
-        let mut palette_rgb = Vec::with_capacity(palette.len() * 3);
-        for color in palette {
-            palette_rgb.push(color.r);
-            palette_rgb.push(color.g);
-            palette_rgb.push(color.b);
-        }
-
-        Ok(palette_rgb)
-    }
-
-    /// Find transparent index and remap transparent pixels to it.
-    /// Prefers index 0 for transparency (GIF convention, better LZW compression).
-    fn find_transparent_index_and_remap(
-        rgba_pixels: &[u8],
-        indices: &mut [u8],
-        lut: &PaletteLut,
-    ) -> Result<Option<u8>> {
-        // Check if there are any transparent pixels
-        let has_transparent = rgba_pixels.chunks_exact(4).any(|p| p[3] < 128);
-
-        if !has_transparent {
-            return Ok(None);
-        }
-
-        let palette = lut.palette();
-        let palette_len = palette.len();
-
-        // Guard against empty palette
-        if palette_len == 0 {
-            return Ok(None);
-        }
-
-        // Count usage of each palette index by OPAQUE pixels only
-        let mut opaque_usage = vec![0usize; palette_len];
-        for (i, pixel) in rgba_pixels.chunks_exact(4).enumerate() {
-            if i < indices.len() && pixel[3] >= 128 {
-                opaque_usage[indices[i] as usize] += 1;
-            }
-        }
-
-        // Prefer index 0 for transparency (GIF convention)
-        let transparent_idx = if opaque_usage[0] == 0 {
-            0
-        } else {
-            if let Some(unused_offset) = opaque_usage.iter().skip(1).position(|&count| count == 0) {
-                (unused_offset + 1) as u8
-            } else if palette_len < 256 {
-                opaque_usage
-                    .iter()
-                    .enumerate()
-                    .min_by_key(|(_, &count)| count)
-                    .map(|(idx, _)| idx as u8)
-                    .unwrap_or(0)
-            } else {
-                opaque_usage
-                    .iter()
-                    .enumerate()
-                    .min_by_key(|(_, &count)| count)
-                    .map(|(idx, _)| idx as u8)
-                    .unwrap_or(0)
-            }
-        };
-
-        // Remap all transparent pixels to use the transparent index
-        for (i, pixel) in rgba_pixels.chunks_exact(4).enumerate() {
-            if i < indices.len() && pixel[3] < 128 {
-                indices[i] = transparent_idx;
-            }
-        }
-
-        Ok(Some(transparent_idx))
-    }
-
     /// Convert flat RGB palette to 3-byte color array.
     fn flat_rgb_to_palette(flat_rgb: &[u8]) -> Vec<[u8; 3]> {
         flat_rgb
@@ -457,16 +293,6 @@ impl VoyagerExactBboxGlobalPaletteBuilder {
             .map(|chunk| [chunk[0], chunk[1], chunk[2]])
             .collect()
     }
-}
-
-/// Simple bounding box structure.
-#[derive(Debug, Clone, Copy)]
-struct BoundingBox {
-    left: u16,
-    top: u16,
-    width: u16,
-    height: u16,
-    area: usize,
 }
 
 #[cfg(test)]
@@ -570,8 +396,8 @@ mod tests {
     fn test_exact_bbox_global_palette_single_frame() {
         let frame = create_opaque_frame(100, 100, [255, 0, 0]);
 
-        let repr = VoyagerExactBboxGlobalPaletteBuilder::build(&[frame], 100, 100)
-            .expect("build failed");
+        let repr =
+            VoyagerExactBboxGlobalPaletteBuilder::build(&[frame], 100, 100).expect("build failed");
 
         // Verify canvas dimensions
         assert_eq!(repr.width, 100);
@@ -627,7 +453,10 @@ mod tests {
         assert!(vframe1.top >= 10);
         assert!(vframe1.width > 0);
         assert!(vframe1.height > 0);
-        assert_eq!(vframe1.indices.len(), (vframe1.width as usize) * (vframe1.height as usize));
+        assert_eq!(
+            vframe1.indices.len(),
+            (vframe1.width as usize) * (vframe1.height as usize)
+        );
 
         // Verify global palette is derived
         assert!(!repr.global_palette.is_empty());
@@ -709,8 +538,8 @@ mod tests {
 
     #[test]
     fn test_exact_bbox_global_palette_empty_sequence() {
-        let repr = VoyagerExactBboxGlobalPaletteBuilder::build(&[], 100, 100)
-            .expect("build failed");
+        let repr =
+            VoyagerExactBboxGlobalPaletteBuilder::build(&[], 100, 100).expect("build failed");
 
         // Verify empty sequence
         assert_eq!(repr.width, 100);

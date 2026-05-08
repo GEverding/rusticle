@@ -219,18 +219,16 @@ fn run_resize(args: ResizeArgs) -> Result<(), Box<dyn Error>> {
 
     let processed = if let Some(level) = args.optimize {
         let opt_level = level.into();
-        
+
         // Use two-path router if strategy is not legacy
         let processed = if args.optimizer_strategy != CliOptimizerStrategy::Legacy {
             let config = TwoPathConfig {
                 strategy: args.optimizer_strategy.into(),
                 path_a_config: Default::default(),
-                path_b_config: rusticle::PathBConfig {
-                    level: opt_level,
-                },
+                path_b_config: rusticle::PathBConfig { level: opt_level },
                 emit_telemetry: args.optimizer_telemetry,
             };
-            
+
             match rusticle::route_optimize(&processed, opt_level, config) {
                 Ok(result) => {
                     // Create a new Gif with the routed frames
@@ -239,7 +237,10 @@ fn run_resize(args: ResizeArgs) -> Result<(), Box<dyn Error>> {
                     routed
                 }
                 Err(e) => {
-                    eprintln!("[two-path-router] routing failed: {}, falling back to legacy optimize", e);
+                    eprintln!(
+                        "[two-path-router] routing failed: {}, falling back to legacy optimize",
+                        e
+                    );
                     processed.optimize(opt_level)
                 }
             }
@@ -567,15 +568,15 @@ fn run_voyager_study(args: VoyagerStudyArgs) -> Result<(), Box<dyn Error>> {
     eprintln!("=== RESULTS SUMMARY ===");
     eprintln!("Input file: {}", results.input_file);
     eprintln!("Input bytes: {}", results.input_bytes);
-    eprintln!("Target dimensions: {}x{}", results.target_width, results.target_height);
+    eprintln!(
+        "Target dimensions: {}x{}",
+        results.target_width, results.target_height
+    );
     eprintln!();
     eprintln!("Candidates:");
     for candidate in &results.candidates {
         if let Some(err) = &candidate.error {
-            eprintln!(
-                "  {}: ERROR - {}",
-                candidate.name, err
-            );
+            eprintln!("  {}: ERROR - {}", candidate.name, err);
         } else {
             eprintln!(
                 "  {}: {} bytes ({:.1}ms, avg patch area: {:.0}, transparent: {:.1}%)",
@@ -605,8 +606,12 @@ fn format_voyager_report(results: &voyager_study::StudyResults) -> String {
     ));
 
     report.push_str("## Candidate Metrics\n\n");
-    report.push_str("| Candidate | Bytes | Runtime (ms) | Avg Patch Area | Transparent % | Status |\n");
-    report.push_str("|-----------|-------|--------------|----------------|---------------|--------|\n");
+    report.push_str(
+        "| Candidate | Bytes | Runtime (ms) | Avg Patch Area | Transparent % | Status |\n",
+    );
+    report.push_str(
+        "|-----------|-------|--------------|----------------|---------------|--------|\n",
+    );
 
     for candidate in &results.candidates {
         let status = if let Some(err) = &candidate.error {
@@ -627,7 +632,10 @@ fn format_voyager_report(results: &voyager_study::StudyResults) -> String {
     }
 
     report.push_str("\n## Analysis\n\n");
-    report.push_str(&format!("**Best candidate by bytes:** {}\n\n", results.best_bytes));
+    report.push_str(&format!(
+        "**Best candidate by bytes:** {}\n\n",
+        results.best_bytes
+    ));
 
     // Compute compression ratios
     let successful: Vec<_> = results
@@ -666,7 +674,9 @@ fn format_voyager_report(results: &voyager_study::StudyResults) -> String {
                 candidate.transparent_usage * 100.0
             ));
         }
-        report.push_str("\nThis indicates that transparent unchanged pixels are present in the animation.\n\n");
+        report.push_str(
+            "\nThis indicates that transparent unchanged pixels are present in the animation.\n\n",
+        );
     }
 
     let patch_areas: Vec<_> = successful

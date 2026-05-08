@@ -188,11 +188,7 @@ pub struct TwoPathResult {
 /// # Fallback Behavior
 /// If Path A is selected but fails (e.g., palette realization error), falls back to Path B.
 /// If both fail, falls back to legacy path.
-pub fn route_optimize(
-    gif: &Gif,
-    level: OptLevel,
-    config: TwoPathConfig,
-) -> Result<TwoPathResult> {
+pub fn route_optimize(gif: &Gif, level: OptLevel, config: TwoPathConfig) -> Result<TwoPathResult> {
     let mut telemetry = TwoPathTelemetry {
         strategy: config.strategy,
         selected_path: None,
@@ -212,7 +208,10 @@ pub fn route_optimize(
                 Ok(frames) => frames,
                 Err(e) => {
                     // Fallback to Path B on classification error
-                    eprintln!("[two-path-router] classification failed: {}, falling back to Path B", e);
+                    eprintln!(
+                        "[two-path-router] classification failed: {}, falling back to Path B",
+                        e
+                    );
                     telemetry.fallback_used = true;
                     telemetry.fallback_reason = Some(format!("classification error: {}", e));
                     optimize_path_b(&gif.frames, config.path_b_config)
@@ -226,7 +225,10 @@ pub fn route_optimize(
                 Ok(frames) => frames,
                 Err(e) => {
                     // Fallback to Path B if Path A fails
-                    eprintln!("[two-path-router] Path A failed: {}, falling back to Path B", e);
+                    eprintln!(
+                        "[two-path-router] Path A failed: {}, falling back to Path B",
+                        e
+                    );
                     telemetry.fallback_used = true;
                     telemetry.fallback_reason = Some(format!("Path A error: {}", e));
                     optimize_path_b(&gif.frames, config.path_b_config)
@@ -278,7 +280,11 @@ fn try_path_a(
     let canonical = CanonicalSequenceBuilder::build(gif)?;
 
     // Extract displayed canvases and delays from canonical frames
-    let canvases: Vec<_> = canonical.frames.iter().map(|f| f.displayed_canvas.clone()).collect();
+    let canvases: Vec<_> = canonical
+        .frames
+        .iter()
+        .map(|f| f.displayed_canvas.clone())
+        .collect();
     let delays: Vec<_> = canonical.frames.iter().map(|f| f.delay).collect();
 
     // Optimize using Path A
@@ -288,17 +294,15 @@ fn try_path_a(
     // Path A returns PathAFrame which we need to convert to Frame
     let frames = path_a_frames
         .into_iter()
-        .map(|paf| {
-            Frame {
-                pixels: paf.pixels,
-                delay: paf.delay,
-                dispose: paf.dispose,
-                local_palette: None,
-                left: paf.left,
-                top: paf.top,
-                width: paf.width,
-                height: paf.height,
-            }
+        .map(|paf| Frame {
+            pixels: paf.pixels,
+            delay: paf.delay,
+            dispose: paf.dispose,
+            local_palette: None,
+            left: paf.left,
+            top: paf.top,
+            width: paf.width,
+            height: paf.height,
         })
         .collect();
 
@@ -314,7 +318,7 @@ mod tests {
     fn make_test_gif(width: u16, height: u16, frame_count: usize) -> Gif {
         let frames = (0..frame_count)
             .map(|i| Frame {
-                pixels: vec![0u8; (width as usize * height as usize * 4)],
+                pixels: vec![0u8; width as usize * height as usize * 4],
                 delay: Duration::from_millis(100),
                 dispose: if i == 0 {
                     DisposalMethod::None

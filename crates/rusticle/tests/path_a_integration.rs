@@ -1,3 +1,5 @@
+#![cfg(feature = "research")]
+
 //! Integration tests for Path A core optimization.
 //!
 //! Tests the complete Path A pipeline:

@@ -1,3 +1,5 @@
+#![cfg(feature = "research")]
+
 //! Integration tests for Path A palette strategy.
 //!
 //! These tests demonstrate the Path A palette strategy in action:

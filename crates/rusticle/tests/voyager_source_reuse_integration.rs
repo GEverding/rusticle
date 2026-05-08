@@ -1,6 +1,7 @@
+#![cfg(feature = "research")]
+
 use rusticle::{
-    DisposalMethod, Frame, Gif, LoopCount, Palette, SourceReuseViability,
-    VoyagerSourceReuseBuilder,
+    DisposalMethod, Frame, Gif, LoopCount, Palette, SourceReuseViability, VoyagerSourceReuseBuilder,
 };
 use std::time::Duration;
 
@@ -108,8 +109,8 @@ fn test_source_reuse_viable_single_frame() {
     let palette = vec![[255, 0, 0], [0, 255, 0], [0, 0, 255]];
     let source_gif = create_test_gif_with_palette(palette);
 
-    let repr = VoyagerSourceReuseBuilder::build(&[frame], 100, 100, &source_gif)
-        .expect("build failed");
+    let repr =
+        VoyagerSourceReuseBuilder::build(&[frame], 100, 100, &source_gif).expect("build failed");
 
     // Verify viability
     assert_eq!(repr.viability, SourceReuseViability::Viable);
@@ -141,8 +142,8 @@ fn test_source_reuse_no_source_palette() {
     let frame = create_opaque_frame(100, 100, [255, 0, 0]);
     let source_gif = create_test_gif_no_palette();
 
-    let repr = VoyagerSourceReuseBuilder::build(&[frame], 100, 100, &source_gif)
-        .expect("build failed");
+    let repr =
+        VoyagerSourceReuseBuilder::build(&[frame], 100, 100, &source_gif).expect("build failed");
 
     // Verify not viable
     assert_eq!(repr.viability, SourceReuseViability::NoSourceGlobalPalette);
@@ -266,8 +267,7 @@ fn test_source_reuse_empty_sequence() {
     let palette = vec![[255, 0, 0], [0, 255, 0], [0, 0, 255]];
     let source_gif = create_test_gif_with_palette(palette);
 
-    let repr = VoyagerSourceReuseBuilder::build(&[], 100, 100, &source_gif)
-        .expect("build failed");
+    let repr = VoyagerSourceReuseBuilder::build(&[], 100, 100, &source_gif).expect("build failed");
 
     assert_eq!(repr.viability, SourceReuseViability::Viable);
     assert_eq!(repr.frames.len(), 0);
@@ -294,7 +294,11 @@ fn test_source_reuse_output_decodable() {
     // Verify each frame has valid indices
     let palette_colors = repr.global_palette.len() / 3;
     for (frame_idx, vframe) in repr.frames.iter().enumerate() {
-        assert!(!vframe.indices.is_empty(), "frame {} should have indices", frame_idx);
+        assert!(
+            !vframe.indices.is_empty(),
+            "frame {} should have indices",
+            frame_idx
+        );
 
         // All indices should be valid
         for &idx in &vframe.indices {
@@ -320,15 +324,12 @@ fn test_source_reuse_multi_frame_voyager_like() {
     let frame3 = create_frame_with_rect(64, 64, [200, 200, 200], 30, 30, 15, 15, [150, 150, 150]);
     let frame4 = create_opaque_frame(64, 64, [200, 200, 200]);
 
-    let palette = vec![
-        [200, 200, 200],
-        [100, 100, 100],
-        [150, 150, 150],
-    ];
+    let palette = vec![[200, 200, 200], [100, 100, 100], [150, 150, 150]];
     let source_gif = create_test_gif_with_palette(palette);
 
-    let repr = VoyagerSourceReuseBuilder::build(&[frame1, frame2, frame3, frame4], 64, 64, &source_gif)
-        .expect("build failed");
+    let repr =
+        VoyagerSourceReuseBuilder::build(&[frame1, frame2, frame3, frame4], 64, 64, &source_gif)
+            .expect("build failed");
 
     assert_eq!(repr.viability, SourceReuseViability::Viable);
 
@@ -367,8 +368,8 @@ fn test_source_reuse_large_palette() {
     let frame = create_opaque_frame(50, 50, [255, 0, 0]);
     let source_gif = create_test_gif_with_palette(palette);
 
-    let repr = VoyagerSourceReuseBuilder::build(&[frame], 50, 50, &source_gif)
-        .expect("build failed");
+    let repr =
+        VoyagerSourceReuseBuilder::build(&[frame], 50, 50, &source_gif).expect("build failed");
 
     assert_eq!(repr.viability, SourceReuseViability::Viable);
     assert_eq!(repr.global_palette.len(), 256 * 3); // 256 colors * 3 bytes each

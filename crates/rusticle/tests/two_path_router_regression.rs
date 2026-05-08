@@ -1,3 +1,5 @@
+#![cfg(feature = "research")]
+
 //! Regression tests for the two-path router architecture.
 //!
 //! Covers:
@@ -10,8 +12,8 @@
 //! All tests are deterministic and use small synthetic sequences.
 
 use rusticle::{
-    CanonicalSequenceBuilder, DisposalMethod, Frame, Gif, LoopCount, OptimizerPath,
-    OptimizerStrategy, OptLevel, QualityMetrics, TwoPathConfig,
+    CanonicalSequenceBuilder, DisposalMethod, Frame, Gif, LoopCount, OptLevel, OptimizerPath,
+    OptimizerStrategy, QualityMetrics, TwoPathConfig,
 };
 use std::time::Duration;
 
@@ -184,7 +186,13 @@ fn test_auto_voyager_like_routes_to_path_a() {
     let h = 32u16;
 
     // Frame 0: full opaque background
-    let frame0 = make_frame(solid_canvas(w, h, 180, 180, 180), w, h, DisposalMethod::None, 100);
+    let frame0 = make_frame(
+        solid_canvas(w, h, 180, 180, 180),
+        w,
+        h,
+        DisposalMethod::None,
+        100,
+    );
 
     // Frame 1: small patch at top-left (8x8) — opaque, Keep disposal
     let patch1 = solid_canvas(8, 8, 100, 100, 100);
@@ -207,8 +215,8 @@ fn test_auto_voyager_like_routes_to_path_a() {
         ..Default::default()
     };
 
-    let result = rusticle::route_optimize(&gif, OptLevel::O3, config)
-        .expect("route_optimize must succeed");
+    let result =
+        rusticle::route_optimize(&gif, OptLevel::O3, config).expect("route_optimize must succeed");
 
     assert_eq!(
         result.telemetry.strategy,
@@ -284,8 +292,8 @@ fn test_auto_transparency_heavy_routes_to_path_b() {
         ..Default::default()
     };
 
-    let result = rusticle::route_optimize(&gif, OptLevel::O3, config)
-        .expect("route_optimize must succeed");
+    let result =
+        rusticle::route_optimize(&gif, OptLevel::O3, config).expect("route_optimize must succeed");
 
     let classification = result
         .telemetry
@@ -332,8 +340,8 @@ fn test_auto_disposal_background_heavy_routes_to_path_b() {
         ..Default::default()
     };
 
-    let result = rusticle::route_optimize(&gif, OptLevel::O3, config)
-        .expect("route_optimize must succeed");
+    let result =
+        rusticle::route_optimize(&gif, OptLevel::O3, config).expect("route_optimize must succeed");
 
     let classification = result
         .telemetry
@@ -381,8 +389,8 @@ fn test_auto_disposal_previous_heavy_routes_to_path_b() {
         ..Default::default()
     };
 
-    let result = rusticle::route_optimize(&gif, OptLevel::O3, config)
-        .expect("route_optimize must succeed");
+    let result =
+        rusticle::route_optimize(&gif, OptLevel::O3, config).expect("route_optimize must succeed");
 
     let classification = result
         .telemetry
@@ -439,8 +447,8 @@ fn test_auto_mixed_disposal_routes_to_path_b() {
         ..Default::default()
     };
 
-    let result = rusticle::route_optimize(&gif, OptLevel::O3, config)
-        .expect("route_optimize must succeed");
+    let result =
+        rusticle::route_optimize(&gif, OptLevel::O3, config).expect("route_optimize must succeed");
 
     let classification = result
         .telemetry
@@ -470,7 +478,13 @@ fn test_forced_path_a_emits_decodable_bytes() {
     let h = 20u16;
 
     let frames = vec![
-        make_frame(solid_canvas(w, h, 200, 100, 50), w, h, DisposalMethod::None, 100),
+        make_frame(
+            solid_canvas(w, h, 200, 100, 50),
+            w,
+            h,
+            DisposalMethod::None,
+            100,
+        ),
         make_frame(
             canvas_with_rect(w, h, 200, 100, 50, 2, 2, 6, 6, 50, 200, 100),
             w,
@@ -562,9 +576,27 @@ fn test_forced_path_a_large_change_emits_decodable_bytes() {
 
     // Each frame is completely different — triggers full-frame fallback in Path A
     let frames = vec![
-        make_frame(solid_canvas(w, h, 255, 0, 0), w, h, DisposalMethod::None, 100),
-        make_frame(solid_canvas(w, h, 0, 255, 0), w, h, DisposalMethod::Keep, 100),
-        make_frame(solid_canvas(w, h, 0, 0, 255), w, h, DisposalMethod::Keep, 100),
+        make_frame(
+            solid_canvas(w, h, 255, 0, 0),
+            w,
+            h,
+            DisposalMethod::None,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 0, 255, 0),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 0, 0, 255),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
     ];
 
     let gif = make_gif(w, h, frames);
@@ -583,7 +615,13 @@ fn test_forced_path_b_background_disposal_emits_decodable_bytes() {
     let h = 16u16;
 
     let frames = vec![
-        make_frame(solid_canvas(w, h, 200, 50, 50), w, h, DisposalMethod::None, 100),
+        make_frame(
+            solid_canvas(w, h, 200, 50, 50),
+            w,
+            h,
+            DisposalMethod::None,
+            100,
+        ),
         make_frame(
             solid_canvas(w, h, 50, 200, 50),
             w,
@@ -622,7 +660,13 @@ fn test_auto_opaque_delta_canvas_preservation() {
     // Frame 2: small blue patch at (8,8) 4x4
     // All opaque, Keep/None disposal → should route to Path A
     let frames = vec![
-        make_frame(solid_canvas(w, h, 200, 50, 50), w, h, DisposalMethod::None, 100),
+        make_frame(
+            solid_canvas(w, h, 200, 50, 50),
+            w,
+            h,
+            DisposalMethod::None,
+            100,
+        ),
         make_frame(
             canvas_with_rect(w, h, 200, 50, 50, 4, 4, 4, 4, 50, 200, 50),
             w,
@@ -642,8 +686,8 @@ fn test_auto_opaque_delta_canvas_preservation() {
     let gif = make_gif(w, h, frames);
     let canonical = CanonicalSequenceBuilder::build(&gif).expect("build canonical");
 
-    let decoded = route_round_trip(&gif, OptimizerStrategy::Auto)
-        .expect("auto round-trip must succeed");
+    let decoded =
+        route_round_trip(&gif, OptimizerStrategy::Auto).expect("auto round-trip must succeed");
 
     assert_eq!(
         decoded.frames.len(),
@@ -709,8 +753,8 @@ fn test_auto_transparency_heavy_canvas_preservation() {
         ..Default::default()
     };
 
-    let result = rusticle::route_optimize(&gif, OptLevel::O3, config)
-        .expect("auto route must succeed");
+    let result =
+        rusticle::route_optimize(&gif, OptLevel::O3, config).expect("auto route must succeed");
 
     // Must route to Path B (has transparent GCE)
     assert_eq!(
@@ -742,7 +786,13 @@ fn test_forced_path_a_canvas_preservation() {
     let h = 16u16;
 
     let frames = vec![
-        make_frame(solid_canvas(w, h, 180, 180, 180), w, h, DisposalMethod::None, 100),
+        make_frame(
+            solid_canvas(w, h, 180, 180, 180),
+            w,
+            h,
+            DisposalMethod::None,
+            100,
+        ),
         make_frame(
             canvas_with_rect(w, h, 180, 180, 180, 2, 2, 4, 4, 80, 80, 80),
             w,
@@ -789,9 +839,27 @@ fn test_forced_path_b_canvas_preservation() {
     let h = 16u16;
 
     let frames = vec![
-        make_frame(solid_canvas(w, h, 200, 100, 50), w, h, DisposalMethod::None, 100),
-        make_frame(solid_canvas(w, h, 50, 200, 100), w, h, DisposalMethod::Keep, 100),
-        make_frame(solid_canvas(w, h, 100, 50, 200), w, h, DisposalMethod::Keep, 100),
+        make_frame(
+            solid_canvas(w, h, 200, 100, 50),
+            w,
+            h,
+            DisposalMethod::None,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 50, 200, 100),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 100, 50, 200),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
     ];
 
     let gif = make_gif(w, h, frames);
@@ -828,7 +896,13 @@ fn test_forced_path_a_fallback_produces_correct_output() {
 
     // Opaque sequence — Path A should handle this without fallback
     let frames = vec![
-        make_frame(solid_canvas(w, h, 200, 200, 200), w, h, DisposalMethod::None, 100),
+        make_frame(
+            solid_canvas(w, h, 200, 200, 200),
+            w,
+            h,
+            DisposalMethod::None,
+            100,
+        ),
         make_frame(
             canvas_with_rect(w, h, 200, 200, 200, 4, 4, 4, 4, 100, 100, 100),
             w,
@@ -846,8 +920,8 @@ fn test_forced_path_a_fallback_produces_correct_output() {
         ..Default::default()
     };
 
-    let result = rusticle::route_optimize(&gif, OptLevel::O3, config)
-        .expect("forced Path A must succeed");
+    let result =
+        rusticle::route_optimize(&gif, OptLevel::O3, config).expect("forced Path A must succeed");
 
     // Path A should not have fallen back
     assert!(
@@ -895,7 +969,10 @@ fn test_forced_path_a_with_transparency_falls_back_gracefully() {
         .expect("forced Path A must not return Err (fallback to Path B)");
 
     // Whether or not fallback was used, output must be non-empty and valid
-    assert!(!result.frames.is_empty(), "must produce frames even with fallback");
+    assert!(
+        !result.frames.is_empty(),
+        "must produce frames even with fallback"
+    );
 
     // Verify the frames are encodable
     let routed_gif = Gif {
@@ -906,7 +983,9 @@ fn test_forced_path_a_with_transparency_falls_back_gracefully() {
         loop_count: gif.loop_count,
         original_palette: None,
     };
-    let bytes = routed_gif.to_bytes().expect("fallback output must be encodable");
+    let bytes = routed_gif
+        .to_bytes()
+        .expect("fallback output must be encodable");
     assert!(!bytes.is_empty());
     let decoded = Gif::from_bytes(&bytes).expect("fallback output must be decodable");
     assert_eq!(decoded.frames.len(), 2);
@@ -919,16 +998,34 @@ fn test_legacy_strategy_canvas_preservation() {
     let h = 16u16;
 
     let frames = vec![
-        make_frame(solid_canvas(w, h, 200, 100, 50), w, h, DisposalMethod::None, 100),
-        make_frame(solid_canvas(w, h, 50, 200, 100), w, h, DisposalMethod::Keep, 100),
-        make_frame(solid_canvas(w, h, 100, 50, 200), w, h, DisposalMethod::Keep, 100),
+        make_frame(
+            solid_canvas(w, h, 200, 100, 50),
+            w,
+            h,
+            DisposalMethod::None,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 50, 200, 100),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 100, 50, 200),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
     ];
 
     let gif = make_gif(w, h, frames);
     let canonical = CanonicalSequenceBuilder::build(&gif).expect("build canonical");
 
-    let decoded = route_round_trip(&gif, OptimizerStrategy::Legacy)
-        .expect("legacy round-trip must succeed");
+    let decoded =
+        route_round_trip(&gif, OptimizerStrategy::Legacy).expect("legacy round-trip must succeed");
 
     assert_eq!(decoded.frames.len(), canonical.frames.len());
 
@@ -956,7 +1053,13 @@ fn test_routing_is_deterministic() {
     let h = 20u16;
 
     let frames = vec![
-        make_frame(solid_canvas(w, h, 180, 180, 180), w, h, DisposalMethod::None, 100),
+        make_frame(
+            solid_canvas(w, h, 180, 180, 180),
+            w,
+            h,
+            DisposalMethod::None,
+            100,
+        ),
         make_frame(
             canvas_with_rect(w, h, 180, 180, 180, 2, 2, 4, 4, 80, 80, 80),
             w,
@@ -981,10 +1084,10 @@ fn test_routing_is_deterministic() {
         ..Default::default()
     };
 
-    let result1 = rusticle::route_optimize(&gif, OptLevel::O3, config)
-        .expect("first route must succeed");
-    let result2 = rusticle::route_optimize(&gif, OptLevel::O3, config)
-        .expect("second route must succeed");
+    let result1 =
+        rusticle::route_optimize(&gif, OptLevel::O3, config).expect("first route must succeed");
+    let result2 =
+        rusticle::route_optimize(&gif, OptLevel::O3, config).expect("second route must succeed");
 
     assert_eq!(
         result1.telemetry.selected_path, result2.telemetry.selected_path,
@@ -1017,9 +1120,27 @@ fn test_all_strategies_produce_same_frame_count() {
     let h = 16u16;
 
     let frames = vec![
-        make_frame(solid_canvas(w, h, 200, 100, 50), w, h, DisposalMethod::None, 100),
-        make_frame(solid_canvas(w, h, 50, 200, 100), w, h, DisposalMethod::Keep, 100),
-        make_frame(solid_canvas(w, h, 100, 50, 200), w, h, DisposalMethod::Keep, 100),
+        make_frame(
+            solid_canvas(w, h, 200, 100, 50),
+            w,
+            h,
+            DisposalMethod::None,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 50, 200, 100),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
+        make_frame(
+            solid_canvas(w, h, 100, 50, 200),
+            w,
+            h,
+            DisposalMethod::Keep,
+            100,
+        ),
     ];
 
     let gif = make_gif(w, h, frames);
@@ -1160,8 +1281,8 @@ fn test_identical_frames_handled_correctly() {
 /// introducing synthetic changes or overwriting with hardcoded values.
 #[test]
 fn test_path_a_identical_frames_minimal_patch_is_opaque() {
+    use rusticle::adaptive_ir::{CanonicalSequenceBuilder, Canvas};
     use rusticle::path_a::{optimize_path_a, PathAConfig};
-    use rusticle::adaptive_ir::{Canvas, CanonicalSequenceBuilder};
 
     let w = 12u16;
     let h = 12u16;
@@ -1219,8 +1340,20 @@ fn test_telemetry_populated_for_all_strategies() {
         w,
         h,
         vec![
-            make_frame(solid_canvas(w, h, 200, 100, 50), w, h, DisposalMethod::None, 100),
-            make_frame(solid_canvas(w, h, 50, 200, 100), w, h, DisposalMethod::Keep, 100),
+            make_frame(
+                solid_canvas(w, h, 200, 100, 50),
+                w,
+                h,
+                DisposalMethod::None,
+                100,
+            ),
+            make_frame(
+                solid_canvas(w, h, 50, 200, 100),
+                w,
+                h,
+                DisposalMethod::Keep,
+                100,
+            ),
         ],
     );
 
@@ -1253,9 +1386,7 @@ fn test_telemetry_populated_for_all_strategies() {
             c.features.keep_none_disposal_ratio >= 0.0
                 && c.features.keep_none_disposal_ratio <= 1.0
         );
-        assert!(
-            c.features.palette_stability >= 0.0 && c.features.palette_stability <= 1.0
-        );
+        assert!(c.features.palette_stability >= 0.0 && c.features.palette_stability <= 1.0);
     }
 
     // PathA: path = PathA, no classification

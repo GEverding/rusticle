@@ -48,6 +48,7 @@
 //! Records per-frame trial count, actual vs heuristic delta, quality gate pass/fail,
 //! budget remaining, and fallback decisions.
 
+use std::fmt;
 use std::time::Instant;
 
 use crate::adaptive_ir::CanonicalSequence;
@@ -60,6 +61,28 @@ use crate::palette_strategy::PaletteStrategy;
 use crate::scoring::{FrameDecision, ScoreBreakdown};
 use crate::types::Gif;
 use std::fmt::Write as FmtWrite;
+
+/// Reason a frame entered Tier-2 measurement.
+#[derive(Debug, Clone, PartialEq)]
+pub enum UncertaintyReason {
+    /// Score gap between top candidates was small.
+    ScoreGapSmall { gap: f32 },
+    /// LUT-breaking candidate was close to a LUT-preserving alternative.
+    LutBreakingWithClosePreservingAlternative { delta: f32 },
+}
+
+impl fmt::Display for UncertaintyReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ScoreGapSmall { gap } => write!(f, "score_gap_small ({:.3})", gap),
+            Self::LutBreakingWithClosePreservingAlternative { delta } => write!(
+                f,
+                "lut_breaking_with_close_preserving_alternative ({:.3})",
+                delta
+            ),
+        }
+    }
+}
 
 /// Measurement budget for Tier-2 bounded encode-and-measure.
 #[derive(Debug, Clone, Copy)]
@@ -164,7 +187,7 @@ pub struct Tier2Telemetry {
     /// Whether this frame was uncertain and entered Tier-2.
     pub was_measured: bool,
     /// Reason(s) for uncertainty (if any).
-    pub uncertainty_reasons: Vec<String>,
+    pub uncertainty_reasons: Vec<UncertaintyReason>,
     /// Measured candidates (if measured).
     pub measured_results: Vec<MeasuredResult>,
     /// Whether measurement succeeded.
@@ -196,7 +219,7 @@ impl Tier2Telemetry {
             if i > 0 {
                 let _ = write!(json, ", ");
             }
-            let _ = write!(json, r#""{}""#, reason.replace('"', "\\\""));
+            let _ = write!(json, r#""{}""#, reason);
         }
         let _ = writeln!(json, r#"],"#);
 
@@ -258,14 +281,14 @@ impl Tier2Measurer {
     pub fn is_uncertain(
         decision: &FrameDecision,
         guardrails: &QualityGuardrails,
-    ) -> (bool, Vec<String>) {
+    ) -> (bool, Vec<UncertaintyReason>) {
         let mut reasons = Vec::new();
 
         // Check score gap between top candidates
         if let Some((_, alt_score)) = decision.alternatives.first() {
             let gap = (alt_score.total_score - decision.score_breakdown.total_score).abs();
             if gap < 0.08 {
-                reasons.push(format!("score_gap_small ({:.3})", gap));
+                reasons.push(UncertaintyReason::ScoreGapSmall { gap });
             }
         }
 
@@ -278,10 +301,9 @@ impl Tier2Measurer {
                     let delta =
                         (alt_score.total_score - decision.score_breakdown.total_score).abs();
                     if delta < guardrails.lut_breaking_penalty_threshold {
-                        reasons.push(format!(
-                            "lut_breaking_with_close_preserving_alternative ({:.3})",
-                            delta
-                        ));
+                        reasons.push(
+                            UncertaintyReason::LutBreakingWithClosePreservingAlternative { delta },
+                        );
                         break;
                     }
                 }
@@ -550,6 +572,10 @@ mod tests {
     use crate::scoring::DecisionReason;
     use crate::BoundingBox;
 
+    fn test_string() -> String {
+        "test".to_owned()
+    }
+
     fn create_test_profile() -> GifProfile {
         GifProfile {
             metrics: SequenceMetrics {
@@ -627,7 +653,8 @@ mod tests {
 
     #[test]
     fn test_is_uncertain_score_gap() {
-        let mut decision = FrameDecision {
+        let _profile = create_test_profile();
+        let decision = FrameDecision {
             frame_index: 0,
             chosen_candidate: CandidateRepresentation::FullFrame,
             chosen_palette_strategy: PaletteStrategy::DeriveSequenceGlobalPreferred,
@@ -662,7 +689,7 @@ mod tests {
                 },
             )],
             reason: DecisionReason::LowestScore,
-            explanation: "test".to_string(),
+            explanation: test_string(),
         };
 
         let guardrails = QualityGuardrails::default();
@@ -708,13 +735,16 @@ mod tests {
                 },
             )],
             reason: DecisionReason::LowestScore,
-            explanation: "test".to_string(),
+            explanation: test_string(),
         };
 
         let guardrails = QualityGuardrails::default();
         let (is_uncertain, reasons) = Tier2Measurer::is_uncertain(&decision, &guardrails);
         assert!(is_uncertain);
-        assert!(reasons.iter().any(|r| r.contains("lut_breaking")));
+        assert!(matches!(
+            reasons.as_slice(),
+            [UncertaintyReason::LutBreakingWithClosePreservingAlternative { .. }]
+        ));
     }
 
     #[test]
@@ -786,7 +816,7 @@ mod tests {
         let telemetry = Tier2Telemetry {
             frame_index: 5,
             was_measured: true,
-            uncertainty_reasons: vec!["score_gap_small (0.05)".to_string()],
+            uncertainty_reasons: vec![UncertaintyReason::ScoreGapSmall { gap: 0.05 }],
             measured_results: vec![
                 MeasuredResult {
                     representation: CandidateRepresentation::FullFrame,

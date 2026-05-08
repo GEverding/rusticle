@@ -48,8 +48,9 @@
 //!   If changed bbox area exceeds this, emit full frame instead of patch.
 //! - **Identical frame handling**: Emit 1x1 pixel patch at (0,0) or skip-frame marker.
 
-use crate::adaptive_ir::{BoundingBox, Canvas};
+use crate::adaptive_ir::Canvas;
 use crate::error::Result;
+use crate::gif_ops::{compute_changed_bbox, extract_bbox_region};
 use crate::types::DisposalMethod;
 use std::time::Duration;
 
@@ -86,69 +87,6 @@ pub struct PathAFrame {
     pub delay: Duration,
     /// Disposal method (always None/Keep for Path A).
     pub dispose: DisposalMethod,
-}
-
-/// Compute the exact changed bounding box between two canvases.
-///
-/// Returns the minimal bounding box of pixels that differ between the two canvases.
-/// If canvases are identical, returns an empty bbox (0, 0, 0, 0).
-fn compute_changed_bbox(prev_canvas: &Canvas, curr_canvas: &Canvas) -> BoundingBox {
-    debug_assert_eq!(prev_canvas.width, curr_canvas.width);
-    debug_assert_eq!(prev_canvas.height, curr_canvas.height);
-
-    let width = prev_canvas.width as usize;
-    let height = prev_canvas.height as usize;
-
-    let mut min_x = width as u16;
-    let mut min_y = height as u16;
-    let mut max_x = 0u16;
-    let mut max_y = 0u16;
-    let mut found_change = false;
-
-    for y in 0..height {
-        for x in 0..width {
-            let idx = (y * width + x) * 4;
-            let prev_pixel = &prev_canvas.pixels[idx..idx + 4];
-            let curr_pixel = &curr_canvas.pixels[idx..idx + 4];
-
-            if prev_pixel != curr_pixel {
-                found_change = true;
-                min_x = min_x.min(x as u16);
-                min_y = min_y.min(y as u16);
-                max_x = max_x.max((x + 1) as u16);
-                max_y = max_y.max((y + 1) as u16);
-            }
-        }
-    }
-
-    if found_change {
-        BoundingBox::new(min_x, min_y, max_x, max_y)
-    } else {
-        BoundingBox::new(0, 0, 0, 0)
-    }
-}
-
-/// Extract a bbox region from a canvas as opaque RGBA pixels.
-///
-/// Copies pixels from the bbox region of the canvas into a new buffer.
-/// All pixels are opaque (alpha = 255) — no synthetic transparency is introduced.
-fn extract_bbox_region(canvas: &Canvas, bbox: BoundingBox) -> Vec<u8> {
-    let width = bbox.width() as usize;
-    let height = bbox.height() as usize;
-    let mut pixels = Vec::with_capacity(width * height * 4);
-
-    for y in 0..height {
-        for x in 0..width {
-            let canvas_x = bbox.left as usize + x;
-            let canvas_y = bbox.top as usize + y;
-            let idx = (canvas_y * (canvas.width as usize) + canvas_x) * 4;
-
-            // Copy pixel as-is from canvas (preserving alpha)
-            pixels.extend_from_slice(&canvas.pixels[idx..idx + 4]);
-        }
-    }
-
-    pixels
 }
 
 /// Optimize a sequence of resized displayed canvases using Path A.
@@ -204,7 +142,12 @@ pub fn optimize_path_a(
         let prev_canvas = &canvases[i - 1];
         let curr_canvas = &canvases[i];
 
-        let changed_bbox = compute_changed_bbox(prev_canvas, curr_canvas);
+        let changed_bbox = compute_changed_bbox(
+            &prev_canvas.pixels,
+            &curr_canvas.pixels,
+            prev_canvas.width as usize,
+            prev_canvas.height as usize,
+        );
 
         let frame = if changed_bbox.area() == 0 {
             // Identical frames: emit 1x1 minimal patch at (0,0) using the actual canvas pixel
@@ -221,7 +164,11 @@ pub fn optimize_path_a(
             }
         } else if changed_bbox.area() <= bbox_area_threshold {
             // Changed area is small: emit exact opaque bbox patch
-            let pixels = extract_bbox_region(curr_canvas, changed_bbox);
+            let pixels = extract_bbox_region(
+                &curr_canvas.pixels,
+                curr_canvas.width as usize,
+                &changed_bbox,
+            );
             PathAFrame {
                 pixels,
                 left: changed_bbox.left,
@@ -308,7 +255,12 @@ mod tests {
     #[test]
     fn test_compute_changed_bbox_identical() {
         let canvas = create_solid_canvas(100, 100, 255, 0, 0);
-        let bbox = compute_changed_bbox(&canvas, &canvas);
+        let bbox = compute_changed_bbox(
+            &canvas.pixels,
+            &canvas.pixels,
+            canvas.width as usize,
+            canvas.height as usize,
+        );
         assert_eq!(bbox.area(), 0, "Identical canvases should have empty bbox");
     }
 
@@ -317,7 +269,12 @@ mod tests {
         let canvas1 = create_solid_canvas(100, 100, 255, 0, 0);
         let canvas2 = create_canvas_with_rect(100, 100, 255, 0, 0, 10, 10, 20, 20, 0, 255, 0);
 
-        let bbox = compute_changed_bbox(&canvas1, &canvas2);
+        let bbox = compute_changed_bbox(
+            &canvas1.pixels,
+            &canvas2.pixels,
+            canvas1.width as usize,
+            canvas1.height as usize,
+        );
         assert_eq!(bbox.left, 10);
         assert_eq!(bbox.top, 10);
         assert_eq!(bbox.right, 30);
