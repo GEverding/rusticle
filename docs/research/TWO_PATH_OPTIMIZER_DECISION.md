@@ -277,14 +277,14 @@ Execute in order. Each task is a discrete, testable unit of work.
 | `tier2_measure.rs` | RESEARCH | Tier2 measurement (encode-and-measure). Deferred as research. Move to `src/research/` or gate behind `#[cfg(feature = "research")]`. |
 | `types.rs` | KEEP | Core types (Gif, Frame, DisposalMethod, Filter, OptLevel, Palette). Unchanged. |
 | `async_io.rs` | KEEP | Async I/O. Unchanged. |
-| `docs/ADAPTIVE_ENCODER_ARCHITECTURE.md` | RESEARCH | Adaptive encoder architecture. Archived as historical reference. Not updated for two-path approach. |
-| `docs/ADAPTIVE_ENCODER_RESULTS.md` | RESEARCH | Adaptive encoder results. Archived as historical reference. |
+| `docs/research/ADAPTIVE_ENCODER_ARCHITECTURE.md` | RESEARCH | Adaptive encoder architecture. Archived as historical reference. Not updated for two-path approach. |
+| `docs/research/ADAPTIVE_ENCODER_RESULTS.md` | RESEARCH | Adaptive encoder results. Archived as historical reference. |
 | `docs/BENCHMARKS.md` | KEEP | Benchmark infrastructure. Updated with two-path results. |
 | `docs/bench_baseline.json` | KEEP | Baseline metrics. Updated with two-path baseline. |
-| `docs/BUTTERAUGLI_TUNING_JOURNAL.md` | RESEARCH | Butteraugli tuning journal. Archived as historical reference. |
-| `docs/tuning_guardrails.md` | RESEARCH | Tuning guardrails. Archived as historical reference. |
-| `docs/TUNING_RECOMMENDATION.md` | RESEARCH | Tuning recommendation. Archived as historical reference. |
-| `docs/TWO_PATH_OPTIMIZER_DECISION.md` | KEEP | This document. Architecture decision for two-path optimizer. |
+| `docs/research/BUTTERAUGLI_TUNING_JOURNAL.md` | RESEARCH | Butteraugli tuning journal. Archived as historical reference. |
+| `docs/research/tuning_guardrails.md` | RESEARCH | Tuning guardrails. Archived as historical reference. |
+| `docs/research/TUNING_RECOMMENDATION.md` | RESEARCH | Tuning recommendation. Archived as historical reference. |
+| `docs/research/TWO_PATH_OPTIMIZER_DECISION.md` | KEEP | This document. Architecture decision for two-path optimizer. |
 
 ---
 
@@ -461,5 +461,5 @@ The trade-off is **worth making** because:
 - **Epic**: `rusticle-1yq` (Two-path GIF optimizer: conservative opaque-delta (A) + general sparse/transparent (B))
 - **Benchmark Task**: `rusticle-9vw` (Benchmark evaluation: Path A/B routing vs current default vs gifsicle on holdout)
 - **Benchmark Report**: `outputs/TWO_PATH_ROUTER_EVALUATION.md` (detailed evaluation results and analysis)
-- **Prior Architecture Doc**: `docs/ADAPTIVE_ENCODER_ARCHITECTURE.md` (archived as historical reference)
+- **Prior Architecture Doc**: `docs/research/ADAPTIVE_ENCODER_ARCHITECTURE.md` (archived as historical reference)
 - **Correctness Fixes**: Disposal-aware optimization, subframe reference-state fixes, O3 semantic fix, quality invalid-state fix (all in `rusticle-45a`)

@@ -47,7 +47,7 @@
 //! - Per-frame quantized data (bbox patches or full-frame, indices, metadata)
 //! - Frame timing and disposal preserved
 //!
-//! See `docs/RESEARCH_VOYAGER_AND_TWO_PATH.md` for full context.
+//! See `docs/research/RESEARCH_VOYAGER_AND_TWO_PATH.md` for full context.
 
 use crate::error::Result;
 use crate::gif_ops::{

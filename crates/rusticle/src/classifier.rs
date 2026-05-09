@@ -70,7 +70,7 @@
 //! transparency-heavy GIFs have fundamentally different optimal strategies, and routes them
 //! accordingly.
 //!
-//! See `docs/RESEARCH_VOYAGER_AND_TWO_PATH.md` for full context.
+//! See `docs/research/RESEARCH_VOYAGER_AND_TWO_PATH.md` for full context.
 
 use crate::adaptive_ir::CanonicalSequence;
 use crate::profiler::{profile_canonical_sequence, GifProfile};

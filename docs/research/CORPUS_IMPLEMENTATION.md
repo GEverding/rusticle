@@ -274,7 +274,7 @@ Result (example expected):
    - Extension guide for new sources
    - Known limitations
 
-3. **docs/CORPUS_IMPLEMENTATION.md** (NEW)
+3. **docs/research/CORPUS_IMPLEMENTATION.md** (NEW)
    - This file
    - Implementation summary
    - What was implemented vs. stubbed
@@ -402,7 +402,7 @@ python3 scripts/corpus_downloader.py \
 
 - **User guide**: `docs/CORPUS_DOWNLOADER.md`
 - **Pipeline spec**: `docs/LARGE_GIF_CORPUS_PIPELINE.md`
-- **Implementation**: `docs/CORPUS_IMPLEMENTATION.md` (this file)
+- **Implementation**: `docs/research/CORPUS_IMPLEMENTATION.md` (this file)
 
 ## References
 

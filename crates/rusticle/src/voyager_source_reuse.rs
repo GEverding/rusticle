@@ -45,7 +45,7 @@
 //! - Frame timing and disposal preserved
 //! - Viability flag indicating whether source palette reuse was possible
 //!
-//! See `docs/RESEARCH_VOYAGER_AND_TWO_PATH.md` for full context.
+//! See `docs/research/RESEARCH_VOYAGER_AND_TWO_PATH.md` for full context.
 
 use crate::error::Result;
 use crate::gif_ops::{compute_changed_bbox, extract_bbox_region, find_transparent_index_and_remap};

@@ -1,6 +1,6 @@
 {
   "study_phase": "rusticle-047",
-  "spec_reference": "docs/VOYAGER_STUDY_CORRECTED_SPEC.md",
+  "spec_reference": "docs/research/VOYAGER_STUDY_CORRECTED_SPEC.md",
   "corpus_size": 4,
   "selection_note": "No files in the available corpora (holdout_suite + benchmark_suite) strictly match all voyager-class criteria (no transparent GCEs + ≥90% None/Keep disposal + ≥50% offset subframes + global palette). The corpus below represents the best available candidates that match the most critical criteria: no transparent GCEs, 100% None/Keep disposal, and global palette. Offset subframes are 0% for all candidates, which is a significant deviation from the ≥50% requirement. This suggests the voyager-class definition may be too narrow for the available corpus, or the corpus needs to be expanded with files that have more offset subframes.",
   "inclusion_criteria": {

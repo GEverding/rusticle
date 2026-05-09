@@ -304,13 +304,13 @@ Before production deployment:
 - `outputs/category_sweep_cartoon.json` (EXP-003 category sweep)
 - `outputs/category_sweep_large.json` (EXP-004 category sweep)
 - `outputs/category_sweep_transparent.json` (EXP-005 category sweep)
-- `docs/tuning_guardrails.md` (policy and guardrails)
-- `docs/BUTTERAUGLI_TUNING_JOURNAL.md` (experiment log)
+- `docs/research/tuning_guardrails.md` (policy and guardrails)
+- `docs/research/BUTTERAUGLI_TUNING_JOURNAL.md` (experiment log)
 - `docs/bench_baseline.json` (gifsicle baseline)
 
 **Related documents**:
-- `docs/tuning_guardrails.md` — Formal candidate selection policy, decision framework, and guardrails.
-- `docs/BUTTERAUGLI_TUNING_JOURNAL.md` — Detailed experiment log (EXP-001 through EXP-005).
+- `docs/research/tuning_guardrails.md` — Formal candidate selection policy, decision framework, and guardrails.
+- `docs/research/BUTTERAUGLI_TUNING_JOURNAL.md` — Detailed experiment log (EXP-001 through EXP-005).
 
 ---
 

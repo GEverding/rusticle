@@ -51,7 +51,7 @@
 //! - Safe fallback to legacy path always available
 //! - No runtime integration by default
 //!
-//! See `docs/RESEARCH_VOYAGER_AND_TWO_PATH.md` for full context.
+//! See `docs/research/RESEARCH_VOYAGER_AND_TWO_PATH.md` for full context.
 
 use crate::adaptive_ir::CanonicalSequenceBuilder;
 use crate::classifier::{classify_sequence, ClassificationResult, OptimizerPath};

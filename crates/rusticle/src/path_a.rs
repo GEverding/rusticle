@@ -40,7 +40,7 @@
 //! Path A works well for already-optimized opaque-delta sequences, but generality is not established.
 //! Validation on a larger, more diverse GIF corpus is needed before promoting to mainline.
 //!
-//! See `docs/RESEARCH_VOYAGER_AND_TWO_PATH.md` for full context.
+//! See `docs/research/RESEARCH_VOYAGER_AND_TWO_PATH.md` for full context.
 //!
 //! # Thresholds
 //!

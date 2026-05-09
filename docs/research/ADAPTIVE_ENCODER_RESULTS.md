@@ -3,7 +3,7 @@
 **Status**: Experimental (telemetry-only, not the default)  
 **Date**: 2026-04-20  
 **Version**: 1.0  
-**Scope**: This document describes research work on adaptive encoding. The mainline product direction is the corrected default path (see `TUNING_RECOMMENDATION.md`).
+**Scope**: This document describes research work on adaptive encoding. The mainline product direction is the corrected default path (see `research/TUNING_RECOMMENDATION.md`).
 
 ---
 
@@ -221,15 +221,15 @@ Only 9/70 files (13%) are disposal-heavy. Adaptive encoder's main value is on th
 ## Artifacts & References
 
 ### Architecture
-- `docs/ADAPTIVE_ENCODER_ARCHITECTURE.md` — Complete design document (sections 1–11)
+- `docs/research/ADAPTIVE_ENCODER_ARCHITECTURE.md` — Complete design document (sections 1–11)
 
 ### Telemetry & Results
 - `outputs/adaptive_harness_report.json` — Machine-readable results (70 files, per-file metrics, taxonomy distribution)
 - `outputs/adaptive_harness_report.md` — Human-readable summary (taxonomy breakdown, representation mix, palette strategy mix)
 
 ### Related Documentation
-- `docs/BUTTERAUGLI_TUNING_JOURNAL.md` — Tuning history and correctness fixes (FIX-001, EXP-007, EXP-008)
-- `docs/TUNING_RECOMMENDATION.md` — Current-path tuning recommendation (global profile: lanczos3/o1/lossy=100)
+- `docs/research/BUTTERAUGLI_TUNING_JOURNAL.md` — Tuning history and correctness fixes (FIX-001, EXP-007, EXP-008)
+- `docs/research/TUNING_RECOMMENDATION.md` — Current-path tuning recommendation (global profile: lanczos3/o1/lossy=100)
 
 ---
 

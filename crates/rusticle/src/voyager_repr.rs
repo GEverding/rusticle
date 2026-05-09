@@ -43,7 +43,7 @@
 //! - Per-frame quantized data (full-frame geometry, indices, metadata)
 //! - Frame timing and disposal preserved
 //!
-//! See `docs/RESEARCH_VOYAGER_AND_TWO_PATH.md` for full context.
+//! See `docs/research/RESEARCH_VOYAGER_AND_TWO_PATH.md` for full context.
 
 use crate::error::Result;
 use crate::gif_ops::{derive_palette_from_rgba, find_transparent_index_and_remap};

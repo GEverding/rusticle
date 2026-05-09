@@ -448,7 +448,7 @@ All 4378 frames selected `reuse-global-preferred` palette strategy.
 ### Artifacts & References
 
 **Architecture**:
-- `docs/ADAPTIVE_ENCODER_ARCHITECTURE.md` — Complete design document (sections 1–11)
+- `docs/research/ADAPTIVE_ENCODER_ARCHITECTURE.md` — Complete design document (sections 1–11)
 
 **Telemetry & Results**:
 - `outputs/adaptive_harness_report.json` — Machine-readable results (70 files, per-file metrics, taxonomy distribution)
@@ -729,7 +729,7 @@ In `crates/rusticle/src/encode.rs`, the `find_transparent_index_and_remap()` fun
 
 ## Policy & Guardrails
 
-**See `docs/tuning_guardrails.md`** for formal candidate selection policy, decision framework, and guardrails.
+**See `docs/research/tuning_guardrails.md`** for formal candidate selection policy, decision framework, and guardrails.
 
 **Key outcome**: Global-only profile recommended at this stage.
 - Selected config: `f=lanczos3|opt=o1|lossy=100` — `LUT=OFF` (optimize + lossy applied)
@@ -742,7 +742,7 @@ In `crates/rusticle/src/encode.rs`, the `find_transparent_index_and_remap()` fun
 
 ## Final Recommendation
 
-**See `docs/TUNING_RECOMMENDATION.md`** for the complete final recommendation artifact.
+**See `docs/research/TUNING_RECOMMENDATION.md`** for the complete final recommendation artifact.
 
 **Summary**:
 - **Policy**: Global-only (no category overrides)
@@ -752,7 +752,7 @@ In `crates/rusticle/src/encode.rs`, the `find_transparent_index_and_remap()` fun
 - **Confidence**: Medium (unresolved risks: size ratio measurement caveat, runtime proxy caveat, transparent category pathology, LUT-ON performance unknown)
 
 **Key artifacts**:
-- `docs/TUNING_RECOMMENDATION.md` — Full recommendation with comparison table, risk assessment, implementation guidance
+- `docs/research/TUNING_RECOMMENDATION.md` — Full recommendation with comparison table, risk assessment, implementation guidance
 - `outputs/final_recommendation.json` — Machine-readable recommendation with metrics and validation checklist
 
 **Next steps**:

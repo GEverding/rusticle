@@ -225,4 +225,4 @@ else:
 ---
 
 **Last Updated**: 2026-04-18  
-**Experiment Artifacts**: EXP-001 through EXP-005 (see `BUTTERAUGLI_TUNING_JOURNAL.md`)
+**Experiment Artifacts**: EXP-001 through EXP-005 (see `research/BUTTERAUGLI_TUNING_JOURNAL.md`)

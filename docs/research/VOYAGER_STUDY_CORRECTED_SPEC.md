@@ -241,7 +241,7 @@ The voyager-class corpus is defined in `docs/voyager_class_corpus.json`. Key fin
 ## Success Criteria
 
 This spec is complete when:
-1. ✓ File exists at `docs/VOYAGER_STUDY_CORRECTED_SPEC.md`
+1. ✓ File exists at `docs/research/VOYAGER_STUDY_CORRECTED_SPEC.md`
 2. ✓ Candidate matrix is specific enough to implement
 3. ✓ Stop/go criteria are clear and measurable
 4. ✓ Voyager-class inclusion criteria are explicit

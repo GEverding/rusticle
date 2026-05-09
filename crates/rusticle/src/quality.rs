@@ -292,8 +292,8 @@ impl QualityMetrics {
     pub fn compare_with_dimensions(
         original: &[u8],
         processed: &[u8],
-        _width: u32,
-        _height: u32,
+        width: u32,
+        height: u32,
     ) -> Self {
         // Guard: buffers must have same length and be RGBA (4 bytes per pixel)
         if original.len() != processed.len() || !original.len().is_multiple_of(4) {
