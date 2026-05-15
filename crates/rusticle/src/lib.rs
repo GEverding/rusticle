@@ -1,4 +1,4 @@
-#![feature(portable_simd)]
+#![cfg_attr(feature = "simd", feature(portable_simd))]
 //! High-performance GIF processing library.
 //!
 //! Decode, resize, optimize, and encode GIF images. 3–6× faster than gifsicle
@@ -6,8 +6,9 @@
 //!
 //! # Example
 //!
-//! ```ignore
-//! use rusticle::{Gif, Filter, OptLevel};
+//! ```no_run
+//! # fn main() -> rusticle::Result<()> {
+//! use rusticle::{Filter, Gif, OptLevel};
 //!
 //! let data = std::fs::read("input.gif")?;
 //! let bytes = Gif::from_bytes(&data)?
@@ -16,6 +17,8 @@
 //!     .lossy(80)
 //!     .to_bytes()?;
 //! std::fs::write("output.gif", bytes)?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! # Feature flags
@@ -34,7 +37,7 @@
 pub mod decode;
 pub mod encode;
 pub mod error;
-pub mod gif_ops;
+pub(crate) mod gif_ops;
 pub mod optimize;
 pub mod palette_lut;
 pub mod quality;

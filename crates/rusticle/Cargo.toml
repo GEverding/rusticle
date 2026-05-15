@@ -26,6 +26,7 @@ criterion = "0.5"
 [features]
 default = ["imagequant"]
 imagequant = ["dep:imagequant"]
+simd = []
 mit-only = []
 research = ["imagequant"]
 async = ["tokio"]

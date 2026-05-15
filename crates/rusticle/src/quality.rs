@@ -151,7 +151,8 @@ impl QualityMetrics {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```no_run
+    /// # fn main() -> rusticle::Result<()> {
     /// use rusticle::QualityMetrics;
     ///
     /// let original = std::fs::read("original.raw")?;
@@ -162,6 +163,8 @@ impl QualityMetrics {
     /// if metrics.is_good() {
     ///     println!("Quality: GOOD");
     /// }
+    /// # Ok(())
+    /// # }
     /// ```
     #[must_use]
     pub fn compare(original: &[u8], processed: &[u8]) -> Self {
@@ -272,7 +275,8 @@ impl QualityMetrics {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```no_run
+    /// # fn main() -> rusticle::Result<()> {
     /// use rusticle::QualityMetrics;
     ///
     /// let original = std::fs::read("original.raw")?;
@@ -287,6 +291,8 @@ impl QualityMetrics {
     /// } else {
     ///     println!("Comparison invalid (buffer mismatch)");
     /// }
+    /// # Ok(())
+    /// # }
     /// ```
     #[must_use]
     #[cfg_attr(not(feature = "butteraugli"), allow(unused_variables))]

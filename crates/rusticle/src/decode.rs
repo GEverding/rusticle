@@ -104,12 +104,15 @@ impl Gif {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```no_run
+    /// # fn main() -> rusticle::Result<()> {
     /// use rusticle::Gif;
     ///
     /// let data = std::fs::read("animation.gif")?;
     /// let gif = Gif::from_bytes(&data)?;
     /// println!("{}x{}, {} frames", gif.width, gif.height, gif.frames.len());
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn from_bytes(data: &[u8]) -> Result<Self> {
         Self::from_read(data)
@@ -125,12 +128,16 @@ impl Gif {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```no_run
+    /// # fn main() -> rusticle::Result<()> {
     /// use rusticle::Gif;
     /// use std::fs::File;
     ///
     /// let file = File::open("animation.gif")?;
     /// let gif = Gif::from_read(file)?;
+    /// println!("{}x{}, {} frames", gif.width, gif.height, gif.frames.len());
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn from_read<R: Read>(reader: R) -> Result<Self> {
         let mut decoder = gif::DecodeOptions::new();

@@ -15,10 +15,17 @@
 //! Perceptual pixel-thresholding (marking "close enough" pixels as transparent)
 //! is **not** part of `optimize()`. Use `lossy(quality)` for perceptual compression:
 //!
-//! ```ignore
+//! ```no_run
+//! # fn main() -> rusticle::Result<()> {
+//! use rusticle::{Gif, OptLevel};
+//!
+//! let data = std::fs::read("input.gif")?;
 //! let gif = Gif::from_bytes(&data)?;
 //! let optimized = gif.optimize(OptLevel::O3);  // Structural only
 //! let compressed = optimized.lossy(80);         // Add perceptual thresholding
+//! # let _ = compressed;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! # Historical Note
@@ -56,10 +63,17 @@ impl Gif {
     /// A new Gif with optimized frames
     ///
     /// # Example
-    /// ```ignore
+    /// ```no_run
+    /// # fn main() -> rusticle::Result<()> {
+    /// use rusticle::{Gif, OptLevel};
+    ///
+    /// let data = std::fs::read("input.gif")?;
     /// let gif = Gif::from_bytes(&data)?;
     /// let optimized = gif.optimize(OptLevel::O3);  // Structural only
     /// let compressed = optimized.lossy(80);         // Add perceptual compression
+    /// # let _ = compressed;
+    /// # Ok(())
+    /// # }
     /// ```
     #[must_use]
     pub fn optimize(self, level: OptLevel) -> Gif {
@@ -109,9 +123,16 @@ impl Gif {
     /// A new Gif with lossy compression applied
     ///
     /// # Examples
-    /// ```ignore
+    /// ```no_run
+    /// # fn main() -> rusticle::Result<()> {
+    /// use rusticle::Gif;
+    ///
+    /// let data = std::fs::read("input.gif")?;
     /// let gif = Gif::from_bytes(&data)?;
     /// let compressed = gif.lossy(80); // 20% quality loss for size reduction
+    /// # let _ = compressed;
+    /// # Ok(())
+    /// # }
     /// ```
     #[must_use]
     pub fn lossy(self, quality: u8) -> Gif {

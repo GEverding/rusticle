@@ -3,6 +3,7 @@
 //! Provides vectorized pixel comparison and transparency marking.
 //! Uses std::simd for portable SIMD across ARM NEON and x86 SSE/AVX.
 
+#[cfg(feature = "simd")]
 use std::simd::{cmp::SimdOrd, cmp::SimdPartialOrd, u8x16, Mask};
 
 /// Bounding box of the region that differs between two frames.
@@ -34,6 +35,7 @@ pub struct DiffRect {
 ///
 /// Panics if `current.len() != previous.len()` or buffer length is not a
 /// multiple of 4.
+#[cfg(feature = "simd")]
 #[inline]
 pub fn mark_unchanged_pixels_simd(current: &mut [u8], previous: &[u8], threshold: u8) -> usize {
     assert_eq!(current.len(), previous.len());
@@ -143,6 +145,36 @@ pub fn mark_unchanged_pixels_scalar(current: &mut [u8], previous: &[u8], thresho
 
 /// Check if a row has any pixels that differ beyond threshold.
 /// Uses SIMD for fast comparison.
+#[cfg(not(feature = "simd"))]
+#[inline]
+pub fn mark_unchanged_pixels_simd(current: &mut [u8], previous: &[u8], threshold: u8) -> usize {
+    assert_eq!(current.len(), previous.len());
+    assert!(
+        current.len().is_multiple_of(4),
+        "Buffer must be multiple of 4 bytes (RGBA)"
+    );
+
+    let mut transparent_count = 0usize;
+
+    for i in (0..current.len()).step_by(4) {
+        if i + 3 < current.len()
+            && current[i].abs_diff(previous[i]) <= threshold
+            && current[i + 1].abs_diff(previous[i + 1]) <= threshold
+            && current[i + 2].abs_diff(previous[i + 2]) <= threshold
+            && current[i + 3].abs_diff(previous[i + 3]) <= threshold
+        {
+            current[i] = 0;
+            current[i + 1] = 0;
+            current[i + 2] = 0;
+            current[i + 3] = 0;
+            transparent_count += 1;
+        }
+    }
+
+    transparent_count
+}
+
+#[cfg(feature = "simd")]
 #[inline]
 fn row_has_diff(prev_row: &[u8], curr_row: &[u8], threshold: u8) -> bool {
     assert_eq!(prev_row.len(), curr_row.len());
@@ -219,6 +251,7 @@ fn row_has_diff_scalar(prev_row: &[u8], curr_row: &[u8], threshold: u8) -> bool 
 ///
 /// # Panics
 /// Panics if `prev.len() != curr.len() != width * height * 4`
+#[cfg(feature = "simd")]
 #[must_use]
 pub fn find_diff_bounding_box(
     prev: &[u8],
@@ -294,6 +327,105 @@ pub fn find_diff_bounding_box(
     }
 
     // Find right column with diff (scan from right)
+    let mut right = left;
+    for x in (left..width).rev() {
+        let mut has_diff = false;
+        for y in top..=bottom {
+            let idx = y * bytes_per_row + x * 4;
+            if curr[idx].abs_diff(prev[idx]) > threshold
+                || curr[idx + 1].abs_diff(prev[idx + 1]) > threshold
+                || curr[idx + 2].abs_diff(prev[idx + 2]) > threshold
+                || curr[idx + 3].abs_diff(prev[idx + 3]) > threshold
+            {
+                has_diff = true;
+                break;
+            }
+        }
+        if has_diff {
+            right = x;
+            break;
+        }
+    }
+
+    Some(DiffRect {
+        left: left as u16,
+        top: top as u16,
+        width: (right - left + 1) as u16,
+        height: (bottom - top + 1) as u16,
+    })
+}
+
+#[cfg(not(feature = "simd"))]
+#[must_use]
+pub fn find_diff_bounding_box(
+    prev: &[u8],
+    curr: &[u8],
+    width: usize,
+    height: usize,
+    threshold: u8,
+) -> Option<DiffRect> {
+    let expected_len = width * height * 4;
+    assert_eq!(prev.len(), expected_len, "prev buffer size mismatch");
+    assert_eq!(curr.len(), expected_len, "curr buffer size mismatch");
+
+    if width == 0 || height == 0 {
+        return None;
+    }
+
+    let bytes_per_row = width * 4;
+
+    let mut top = height;
+    for y in 0..height {
+        let row_start = y * bytes_per_row;
+        let row_end = row_start + bytes_per_row;
+        if row_has_diff_scalar(
+            &prev[row_start..row_end],
+            &curr[row_start..row_end],
+            threshold,
+        ) {
+            top = y;
+            break;
+        }
+    }
+
+    if top == height {
+        return None;
+    }
+
+    let mut bottom = top;
+    for y in (top..height).rev() {
+        let row_start = y * bytes_per_row;
+        let row_end = row_start + bytes_per_row;
+        if row_has_diff_scalar(
+            &prev[row_start..row_end],
+            &curr[row_start..row_end],
+            threshold,
+        ) {
+            bottom = y;
+            break;
+        }
+    }
+
+    let mut left = width;
+    for x in 0..width {
+        let mut has_diff = false;
+        for y in top..=bottom {
+            let idx = y * bytes_per_row + x * 4;
+            if curr[idx].abs_diff(prev[idx]) > threshold
+                || curr[idx + 1].abs_diff(prev[idx + 1]) > threshold
+                || curr[idx + 2].abs_diff(prev[idx + 2]) > threshold
+                || curr[idx + 3].abs_diff(prev[idx + 3]) > threshold
+            {
+                has_diff = true;
+                break;
+            }
+        }
+        if has_diff {
+            left = x;
+            break;
+        }
+    }
+
     let mut right = left;
     for x in (left..width).rev() {
         let mut has_diff = false;

@@ -11,10 +11,12 @@ use rayon::prelude::*;
 /// Uses 6 bits per channel (262KB table) for O(1) color lookup with improved accuracy.
 ///
 /// # Example
-/// ```ignore
-/// let palette = vec![[255, 0, 0], [0, 255, 0], [0, 0, 255]];
+/// ```rust
+/// use rusticle::PaletteLut;
+///
+/// let palette = [[255, 0, 0], [0, 255, 0], [0, 0, 255]];
 /// let lut = PaletteLut::new(&palette);
-/// let idx = lut.map(255, 0, 0);  // Returns 0 (red)
+/// assert_eq!(lut.map(255, 0, 0), 0);
 /// ```
 pub struct PaletteLut {
     /// 64×64×64 table mapping RGB666 to palette index (262144 bytes)
@@ -89,8 +91,12 @@ impl PaletteLut {
     /// Map an RGB pixel to palette index. O(1).
     ///
     /// # Example
-    /// ```ignore
-    /// let idx = lut.map(255, 0, 0);
+    /// ```rust
+    /// use rusticle::PaletteLut;
+    ///
+    /// let palette = [[255, 0, 0], [0, 255, 0], [0, 0, 255]];
+    /// let lut = PaletteLut::new(&palette);
+    /// assert_eq!(lut.map(255, 0, 0), 0);
     /// ```
     #[inline]
     pub fn map(&self, r: u8, g: u8, b: u8) -> u8 {
@@ -103,8 +109,14 @@ impl PaletteLut {
     /// Used for quality detection to measure how well the palette matches the color.
     ///
     /// # Example
-    /// ```ignore
+    /// ```rust
+    /// use rusticle::PaletteLut;
+    ///
+    /// let palette = [[255, 0, 0], [0, 255, 0], [0, 0, 255]];
+    /// let lut = PaletteLut::new(&palette);
     /// let (idx, dist_sq) = lut.map_with_distance(255, 0, 0);
+    /// assert_eq!(idx, 0);
+    /// assert_eq!(dist_sq, 0);
     /// ```
     #[inline]
     pub fn map_with_distance(&self, r: u8, g: u8, b: u8) -> (u8, u32) {

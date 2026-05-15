@@ -110,9 +110,16 @@ impl Gif {
     /// or `Error::ResizeError` if the resize operation fails.
     ///
     /// # Example
-    /// ```ignore
+    /// ```no_run
+    /// # fn main() -> rusticle::Result<()> {
+    /// use rusticle::{Filter, Gif};
+    ///
+    /// let data = std::fs::read("input.gif")?;
     /// let gif = Gif::from_bytes(&data)?;
     /// let resized = gif.resize(640, 480, Filter::Lanczos3)?;
+    /// # let _ = resized;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn resize(self, width: u32, height: u32, filter: Filter) -> Result<Gif, Error> {
         if width == 0 || height == 0 {
@@ -153,9 +160,16 @@ impl Gif {
     /// or `Error::ResizeError` if the resize operation fails.
     ///
     /// # Example
-    /// ```ignore
+    /// ```no_run
+    /// # fn main() -> rusticle::Result<()> {
+    /// use rusticle::{Filter, Gif};
+    ///
+    /// let data = std::fs::read("input.gif")?;
     /// let gif = Gif::from_bytes(&data)?;
     /// let resized = gif.resize_fit(640, 480, Filter::Lanczos3)?;
+    /// # let _ = resized;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn resize_fit(self, max_width: u32, max_height: u32, filter: Filter) -> Result<Gif, Error> {
         if max_width == 0 || max_height == 0 {

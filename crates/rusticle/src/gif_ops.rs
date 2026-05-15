@@ -1,4 +1,5 @@
 //! Shared GIF helpers.
+#![cfg_attr(not(feature = "research"), allow(dead_code))]
 
 use crate::error::Result;
 

@@ -55,15 +55,19 @@ impl Gif {
     ///
     /// # Example
     ///
-    /// ```ignore
-    /// use rusticle::{Gif, Filter, OptLevel};
+    /// ```no_run
+    /// # fn main() -> rusticle::Result<()> {
+    /// use rusticle::{Filter, Gif, OptLevel};
     ///
+    /// let data = std::fs::read("input.gif")?;
     /// let gif = Gif::from_bytes(&data)?;
     /// let bytes = gif
     ///     .resize(320, 240, Filter::Lanczos3)?
     ///     .optimize(OptLevel::O2)
     ///     .to_bytes()?;
     /// std::fs::write("output.gif", bytes)?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
         let mut buffer = Vec::new();
@@ -81,10 +85,17 @@ impl Gif {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```no_run
+    /// # fn main() -> rusticle::Result<()> {
+    /// use rusticle::{Filter, Gif};
+    ///
+    /// let data = std::fs::read("input.gif")?;
     /// let bytes = Gif::from_bytes(&data)?
     ///     .resize(320, 240, Filter::Lanczos3)?
     ///     .into_bytes()?;
+    /// std::fs::write("output.gif", bytes)?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn into_bytes(self) -> Result<Vec<u8>> {
         self.to_bytes()
@@ -115,11 +126,17 @@ impl Gif {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```no_run
+    /// # fn main() -> rusticle::Result<()> {
+    /// use rusticle::Gif;
     /// use std::fs::File;
     ///
+    /// let data = std::fs::read("input.gif")?;
+    /// let gif = Gif::from_bytes(&data)?;
     /// let mut file = File::create("output.gif")?;
     /// gif.encode_to(&mut file)?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn encode_to<W: Write>(&self, writer: W) -> Result<()> {
         let mut encoder = gif::Encoder::new(writer, self.width, self.height, &[])
