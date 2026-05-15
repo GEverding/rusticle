@@ -1,6 +1,6 @@
+use rusticle::Gif;
 use std::fs;
 use std::path::Path;
-use rusticle::Gif;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let holdout_dir = "test_gifs/holdout_suite";
@@ -54,7 +54,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     candidates.sort_by(|a, b| {
         let score_a = a.1.voyager_score();
         let score_b = b.1.voyager_score();
-        score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+        score_b
+            .partial_cmp(&score_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     // Filter for voyager-class
@@ -73,8 +75,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("    Frames: {}", analysis.frame_count);
         println!("    Dimensions: {}x{}", analysis.width, analysis.height);
         println!("    Has transparent: {}", analysis.has_transparent_gces);
-        println!("    None/Keep disposal: {:.1}%", analysis.none_keep_disposal_pct);
-        println!("    Offset subframes: {:.1}%", analysis.offset_subframes_pct);
+        println!(
+            "    None/Keep disposal: {:.1}%",
+            analysis.none_keep_disposal_pct
+        );
+        println!(
+            "    Offset subframes: {:.1}%",
+            analysis.offset_subframes_pct
+        );
         println!("    Global palette: {}", analysis.has_global_palette);
         println!("    Voyager score: {:.2}", analysis.voyager_score());
         println!();
@@ -82,27 +90,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n=== STRICT VOYAGER-CLASS MATCHES ===\n");
     if voyager_class.is_empty() {
-        println!("No files match all strict criteria (no transparent + 90% None/Keep + 50% offset).");
+        println!(
+            "No files match all strict criteria (no transparent + 90% None/Keep + 50% offset)."
+        );
         println!("\nAnalyzing offset subframe distribution:\n");
-        
+
         let mut by_offset = Vec::new();
         for (name, analysis) in &candidates {
             if !analysis.has_transparent_gces && analysis.none_keep_disposal_pct >= 90.0 {
                 by_offset.push((name.clone(), analysis.clone()));
             }
         }
-        
+
         by_offset.sort_by(|a, b| {
-            b.1.offset_subframes_pct.partial_cmp(&a.1.offset_subframes_pct).unwrap_or(std::cmp::Ordering::Equal)
+            b.1.offset_subframes_pct
+                .partial_cmp(&a.1.offset_subframes_pct)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
-        
+
         println!("Files with no transparent + 90% None/Keep disposal (sorted by offset %):");
         for (name, analysis) in by_offset.iter().take(15) {
             println!("{}", name);
             println!("    Frames: {}", analysis.frame_count);
             println!("    Dimensions: {}x{}", analysis.width, analysis.height);
-            println!("    None/Keep disposal: {:.1}%", analysis.none_keep_disposal_pct);
-            println!("    Offset subframes: {:.1}%", analysis.offset_subframes_pct);
+            println!(
+                "    None/Keep disposal: {:.1}%",
+                analysis.none_keep_disposal_pct
+            );
+            println!(
+                "    Offset subframes: {:.1}%",
+                analysis.offset_subframes_pct
+            );
             println!("    Global palette: {}", analysis.has_global_palette);
             println!();
         }
@@ -112,7 +130,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("  Frames: {}", analysis.frame_count);
             println!("  Dimensions: {}x{}", analysis.width, analysis.height);
             println!("  Has transparent: {}", analysis.has_transparent_gces);
-            println!("  None/Keep disposal: {:.1}%", analysis.none_keep_disposal_pct);
+            println!(
+                "  None/Keep disposal: {:.1}%",
+                analysis.none_keep_disposal_pct
+            );
             println!("  Offset subframes: {:.1}%", analysis.offset_subframes_pct);
             println!("  Global palette: {}", analysis.has_global_palette);
             println!("  Voyager score: {:.2}", analysis.voyager_score());
@@ -120,7 +141,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    println!("Total strict voyager-class candidates: {}", voyager_class.len());
+    println!(
+        "Total strict voyager-class candidates: {}",
+        voyager_class.len()
+    );
 
     Ok(())
 }
@@ -190,10 +214,7 @@ fn analyze_gif(gif: &Gif, _path: &Path) -> GifAnalysis {
         0.0
     };
 
-    let offset_count = frames
-        .iter()
-        .filter(|f| f.left != 0 || f.top != 0)
-        .count();
+    let offset_count = frames.iter().filter(|f| f.left != 0 || f.top != 0).count();
     let offset_subframes_pct = if frame_count > 0 {
         (offset_count as f64 / frame_count as f64) * 100.0
     } else {

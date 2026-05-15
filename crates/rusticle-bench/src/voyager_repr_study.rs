@@ -369,8 +369,7 @@ pub fn run_study(output_dir: &Path) -> std::io::Result<()> {
 
     // Write JSON results
     let json_path = output_dir.join("voyager_repr_study_results.json");
-    let json = serde_json::to_string_pretty(&study_results)
-        .map_err(std::io::Error::other)?;
+    let json = serde_json::to_string_pretty(&study_results).map_err(std::io::Error::other)?;
     fs::write(&json_path, json)?;
     eprintln!("Wrote results to: {:?}", json_path);
 
