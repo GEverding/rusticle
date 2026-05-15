@@ -26,6 +26,10 @@ use std::time::Instant;
 
 type QualityResult = (f64, f64, f64, f64, Option<f64>, Option<f64>);
 
+fn tier0_decision_label(decision: rusticle::Tier0Decision) -> String {
+    decision.name().to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TieredEvalResult {
     pub file_name: String,
@@ -204,7 +208,7 @@ pub fn encode_rusticle_tiered(data: &[u8]) -> Option<TieredEncodeResult> {
 
     // Extract tiered telemetry if available
     let tiered_telemetry = decision.tiered_telemetry.map(|t| TieredTelemetry {
-        tier0_decision: t.tier0_decision,
+        tier0_decision: tier0_decision_label(t.tier0_decision),
         candidates_before_pruning: t.candidates_before_pruning,
         candidates_after_pruning: t.candidates_after_pruning,
         tier2_measurement_ran: t.tier2_measurement_ran,

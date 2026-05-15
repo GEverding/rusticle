@@ -11,6 +11,7 @@
 
 use rusticle::{Filter, Gif, OptLevel};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -57,6 +58,12 @@ impl CandidateId {
             Self::TransparentBboxLocal => "transparent_bbox_local",
             Self::Unknown => "unknown",
         }
+    }
+}
+
+impl fmt::Display for CandidateId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 

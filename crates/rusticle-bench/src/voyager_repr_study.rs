@@ -227,7 +227,7 @@ pub fn evaluate_file(file_path: &Path) -> Result<Vec<CandidateResult>> {
 
         let start = Instant::now();
         let output = Command::new("gifsicle")
-            .args(&[
+            .args([
                 "--resize-width",
                 &target_width.to_string(),
                 "-O3",
@@ -370,7 +370,7 @@ pub fn run_study(output_dir: &Path) -> std::io::Result<()> {
     // Write JSON results
     let json_path = output_dir.join("voyager_repr_study_results.json");
     let json = serde_json::to_string_pretty(&study_results)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        .map_err(std::io::Error::other)?;
     fs::write(&json_path, json)?;
     eprintln!("Wrote results to: {:?}", json_path);
 
@@ -433,7 +433,7 @@ fn generate_report(results: &StudyResults) -> String {
                 result.viability.as_str()
             ));
         }
-        report.push_str("\n");
+        report.push('\n');
     }
 
     report.push_str("## Analysis\n\n");
