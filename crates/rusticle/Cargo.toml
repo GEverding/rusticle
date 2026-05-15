@@ -24,8 +24,9 @@ butteraugli = { version = "0.9", optional = true }
 criterion = "0.5"
 
 [features]
-default = []
+default = ["imagequant"]
 imagequant = ["dep:imagequant"]
+mit-only = []
 research = ["imagequant"]
 async = ["tokio"]
 serde = ["dep:serde"]

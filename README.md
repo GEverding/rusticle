@@ -142,6 +142,16 @@ image = ["dep:image"]       # image crate conversions (Frame ↔ RgbaImage)
 butteraugli = ["dep:butteraugli"]  # Butteraugli perceptual distance metrics
 ```
 
+## Licensing
+
+- rusticle's code is MIT
+- default builds include imagequant (GPL-3.0) for best quality/speed
+- MIT-only builds:
+
+```toml
+rusticle = { version = "0.1", default-features = false, features = ["mit-only"] }
+```
+
 With the `image` feature enabled:
 
 ```rust
