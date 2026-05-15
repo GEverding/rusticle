@@ -21,9 +21,11 @@
 //! # Feature flags
 //!
 //! - **`async`** — Async I/O via tokio (`Gif::from_async_read`, `Gif::encode_to_async_write`)
+//! - **`imagequant`** — Higher-quality color quantization via imagequant (GPL-3.0 licensed dependency — enables GPL obligations)
 //! - **`serde`** — Serialize/deserialize `Filter`, `OptLevel`, `QualityMetrics`, etc.
 //! - **`image`** — Conversions between `Frame`/`Gif` and `image::RgbaImage`
 //! - **`butteraugli`** — Perceptual image quality metrics via butteraugli
+//! - **`research`** — Experimental research modules (implies imagequant)
 
 pub mod decode;
 pub mod encode;

@@ -9,7 +9,7 @@ name = "rusticle"
 path = "src/main.rs"
 
 [dependencies]
-rusticle = { path = "../rusticle", features = ["butteraugli", "serde", "research"] }
+rusticle = { path = "../rusticle", features = ["butteraugli", "serde", "research", "imagequant"] }
 clap = { version = "4.5", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

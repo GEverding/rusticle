@@ -2,12 +2,18 @@
 name = "rusticle"
 version.workspace = true
 edition.workspace = true
+description = "High-performance GIF processing: decode, resize, optimize, encode"
+license = "MIT"
+repository = "https://github.com/geverding/rusticle"
+keywords = ["gif", "image", "resize", "optimize", "encode"]
+categories = ["multimedia::images"]
 
 [dependencies]
 gif = "0.13"
 thiserror = "1.0"
 tokio = { version = "1", features = ["rt", "io-util"], optional = true }
-imagequant = "4"
+imagequant = { version = "4", optional = true }
+exoquant = "0.2"
 fast_image_resize = "5"
 rayon = "1.10"
 serde = { version = "1", features = ["derive"], optional = true }
@@ -16,11 +22,11 @@ butteraugli = { version = "0.9", optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
-exoquant = "0.2"
 
 [features]
 default = []
-research = []
+imagequant = ["dep:imagequant"]
+research = ["imagequant"]
 async = ["tokio"]
 serde = ["dep:serde"]
 image = ["dep:image"]

@@ -289,6 +289,7 @@ impl QualityMetrics {
     /// }
     /// ```
     #[must_use]
+    #[cfg_attr(not(feature = "butteraugli"), allow(unused_variables))]
     pub fn compare_with_dimensions(
         original: &[u8],
         processed: &[u8],

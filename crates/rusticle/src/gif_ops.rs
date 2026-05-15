@@ -1,8 +1,13 @@
 //! Shared GIF helpers.
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 
+#[cfg(feature = "imagequant")]
+use crate::error::Error;
+
+#[cfg(feature = "imagequant")]
 /// Derive a 256-color palette from RGBA pixels using imagequant.
+#[cfg(feature = "imagequant")]
 pub fn derive_palette_from_rgba(rgba_pixels: &[u8]) -> Result<Vec<u8>> {
     let rgba_data: Vec<imagequant::RGBA> = rgba_pixels
         .chunks_exact(4)
@@ -41,6 +46,32 @@ pub fn derive_palette_from_rgba(rgba_pixels: &[u8]) -> Result<Vec<u8>> {
     let (palette, _) = result
         .remapped(&mut img)
         .map_err(|e| Error::EncodeError(format!("failed to remap: {}", e)))?;
+
+    let mut palette_rgb = Vec::with_capacity(palette.len() * 3);
+    for color in palette {
+        palette_rgb.push(color.r);
+        palette_rgb.push(color.g);
+        palette_rgb.push(color.b);
+    }
+
+    Ok(palette_rgb)
+}
+
+#[cfg(not(feature = "imagequant"))]
+/// Derive a 256-color palette from RGBA pixels using exoquant.
+pub fn derive_palette_from_rgba(rgba_pixels: &[u8]) -> Result<Vec<u8>> {
+    if rgba_pixels.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let pixels: Vec<exoquant::Color> = rgba_pixels
+        .chunks_exact(4)
+        .map(|chunk| exoquant::Color::new(chunk[0], chunk[1], chunk[2], chunk[3]))
+        .collect();
+    let histogram: exoquant::Histogram = pixels.iter().copied().collect();
+    let colorspace = exoquant::SimpleColorSpace::default();
+    let palette =
+        exoquant::generate_palette(&histogram, &colorspace, &exoquant::optimizer::KMeans, 256);
 
     let mut palette_rgb = Vec::with_capacity(palette.len() * 3);
     for color in palette {
