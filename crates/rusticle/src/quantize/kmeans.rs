@@ -1,6 +1,10 @@
 //! K-means palette refinement.
 
 use std::collections::BTreeSet;
+use std::sync::OnceLock;
+
+#[cfg(target_arch = "x86_64")]
+use std::arch::x86_64::*;
 
 use crate::quantize::OPAQUE_ALPHA_THRESHOLD;
 
@@ -90,6 +94,108 @@ fn dist_sq_rgb(a: (u8, u8, u8), b: (u8, u8, u8)) -> u32 {
     (dr * dr + dg * dg + db * db) as u32
 }
 
+#[inline]
+#[must_use]
+fn nearest_color_scalar(palette: &PaletteSoA, r: i16, g: i16, b: i16) -> usize {
+    let mut best_idx = 0_usize;
+    let mut best_dist = i32::MAX;
+
+    for i in 0..palette.len {
+        let dr = (r - palette.r[i]) as i32;
+        let dg = (g - palette.g[i]) as i32;
+        let db = (b - palette.b[i]) as i32;
+        let dist = dr * dr + dg * dg + db * db;
+
+        if dist < best_dist {
+            best_dist = dist;
+            best_idx = i;
+        }
+    }
+
+    best_idx
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn nearest_color_avx2(palette: &PaletteSoA, r: i16, g: i16, b: i16) -> usize {
+    let mut best_idx = 0_usize;
+    let mut best_dist = i32::MAX;
+    let mut i = 0_usize;
+
+    let qr = _mm_set1_epi16(r);
+    let qg = _mm_set1_epi16(g);
+    let qb = _mm_set1_epi16(b);
+
+    while i + 8 <= palette.len {
+        let pr = _mm_loadu_si128(palette.r.as_ptr().add(i) as *const __m128i);
+        let pg = _mm_loadu_si128(palette.g.as_ptr().add(i) as *const __m128i);
+        let pb = _mm_loadu_si128(palette.b.as_ptr().add(i) as *const __m128i);
+
+        let dr = _mm_sub_epi16(qr, pr);
+        let dg = _mm_sub_epi16(qg, pg);
+        let db = _mm_sub_epi16(qb, pb);
+
+        let dr = _mm256_cvtepi16_epi32(dr);
+        let dg = _mm256_cvtepi16_epi32(dg);
+        let db = _mm256_cvtepi16_epi32(db);
+
+        let dist = _mm256_add_epi32(
+            _mm256_add_epi32(_mm256_mullo_epi32(dr, dr), _mm256_mullo_epi32(dg, dg)),
+            _mm256_mullo_epi32(db, db),
+        );
+
+        let mut lanes = [0_i32; 8];
+        _mm256_storeu_si256(lanes.as_mut_ptr() as *mut __m256i, dist);
+        for (lane, &dist) in lanes.iter().enumerate() {
+            if dist < best_dist {
+                best_dist = dist;
+                best_idx = i + lane;
+            }
+        }
+
+        i += 8;
+    }
+
+    while i < palette.len {
+        let dr = (r - palette.r[i]) as i32;
+        let dg = (g - palette.g[i]) as i32;
+        let db = (b - palette.b[i]) as i32;
+        let dist = dr * dr + dg * dg + db * db;
+
+        if dist < best_dist {
+            best_dist = dist;
+            best_idx = i;
+        }
+
+        i += 1;
+    }
+
+    best_idx
+}
+
+#[cfg(target_arch = "x86_64")]
+type NearestColorImpl = fn(&PaletteSoA, i16, i16, i16) -> usize;
+
+#[cfg(target_arch = "x86_64")]
+#[inline]
+fn nearest_color_avx2_dispatch(palette: &PaletteSoA, r: i16, g: i16, b: i16) -> usize {
+    unsafe { nearest_color_avx2(palette, r, g, b) }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[inline]
+fn nearest_color_impl() -> NearestColorImpl {
+    static IMPL: OnceLock<NearestColorImpl> = OnceLock::new();
+
+    *IMPL.get_or_init(|| {
+        if is_x86_feature_detected!("avx2") {
+            nearest_color_avx2_dispatch
+        } else {
+            nearest_color_scalar
+        }
+    })
+}
+
 /// Expand a palette using deterministic farthest-point sampling from opaque source pixels.
 #[must_use]
 pub(crate) fn expand_palette_with_farthest_points(
@@ -171,22 +277,15 @@ pub(crate) fn expand_palette_with_farthest_points(
 #[inline]
 #[must_use]
 pub(crate) fn nearest_color(palette: &PaletteSoA, r: i16, g: i16, b: i16) -> usize {
-    let mut best_idx = 0_usize;
-    let mut best_dist = i32::MAX;
-
-    for i in 0..palette.len {
-        let dr = (r - palette.r[i]) as i32;
-        let dg = (g - palette.g[i]) as i32;
-        let db = (b - palette.b[i]) as i32;
-        let dist = dr * dr + dg * dg + db * db;
-
-        if dist < best_dist {
-            best_dist = dist;
-            best_idx = i;
-        }
+    #[cfg(target_arch = "x86_64")]
+    {
+        nearest_color_impl()(palette, r, g, b)
     }
 
-    best_idx
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        nearest_color_scalar(palette, r, g, b)
+    }
 }
 
 /// Refine a palette using k-means iterations.
@@ -327,6 +426,37 @@ mod tests {
         let palette = PaletteSoA::from_tuples(&[(0, 0, 0), (100, 0, 0)]);
 
         assert_eq!(nearest_color(&palette, 60, 0, 0), 1);
+    }
+
+    #[test]
+    fn test_nearest_color_tie_keeps_first() {
+        let palette = PaletteSoA::from_tuples(&[(0, 0, 0), (2, 0, 0)]);
+
+        assert_eq!(nearest_color(&palette, 1, 0, 0), 0);
+    }
+
+    #[test]
+    fn test_nearest_color_matches_scalar() {
+        let palette = PaletteSoA::from_tuples(&[
+            (0, 0, 0),
+            (255, 255, 255),
+            (64, 128, 192),
+            (192, 64, 32),
+            (32, 192, 64),
+            (128, 32, 192),
+            (16, 16, 240),
+            (240, 16, 16),
+            (16, 240, 16),
+        ]);
+
+        for r in [0_i16, 1, 15, 32, 63, 64, 127, 128, 191, 192, 223, 255] {
+            for g in [0_i16, 17, 64, 96, 128, 160, 192, 224, 255] {
+                for b in [0_i16, 8, 16, 31, 64, 127, 128, 191, 240, 255] {
+                    let expected = nearest_color_scalar(&palette, r, g, b);
+                    assert_eq!(nearest_color(&palette, r, g, b), expected);
+                }
+            }
+        }
     }
 
     #[test]
