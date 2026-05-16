@@ -321,10 +321,30 @@ pub(crate) fn dither_floyd_steinberg_serpentine(
 }
 
 /// No dithering — simple nearest-color mapping.
-#[cfg(test)]
 #[must_use]
 pub(crate) fn dither_none(palette: &PaletteSoA, rgba_pixels: &[u8]) -> Vec<u8> {
-    map_pixels(palette, rgba_pixels)
+    if rgba_pixels.is_empty() {
+        return Vec::new();
+    }
+
+    let mut indices = Vec::with_capacity(rgba_pixels.len() / 4);
+
+    for px in rgba_pixels.chunks_exact(4) {
+        if px[3] < OPAQUE_ALPHA_THRESHOLD {
+            indices.push(0);
+            continue;
+        }
+
+        let idx = nearest_color(
+            palette,
+            i16::from(px[0]),
+            i16::from(px[1]),
+            i16::from(px[2]),
+        );
+        indices.push(idx as u8);
+    }
+
+    indices
 }
 
 #[cfg(test)]
@@ -430,8 +450,10 @@ mod tests {
     fn test_transparent_preserved() {
         let palette = PaletteSoA::from_tuples(&[(0, 0, 0), (255, 255, 255)]);
         let pixels = rgba(&[(255, 0, 0, 0), (0, 255, 0, 127), (255, 255, 255, 255)]);
+        let none = dither_none(&palette, &pixels);
 
-        assert_eq!(dither_none(&palette, &pixels), vec![0, 0, 1]);
+        assert_eq!(none, vec![0, 0, 1]);
+        assert!(none.iter().all(|&idx| usize::from(idx) < palette.len));
         assert_eq!(dither_ordered(&palette, &pixels, 3, 1, 0.5), vec![0, 0, 1]);
         assert_eq!(
             dither_floyd_steinberg(&palette, &pixels, 3, 1),

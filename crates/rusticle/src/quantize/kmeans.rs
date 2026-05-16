@@ -6,6 +6,9 @@ use std::sync::OnceLock;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
+#[cfg(target_arch = "aarch64")]
+use std::arch::aarch64::*;
+
 use crate::quantize::OPAQUE_ALPHA_THRESHOLD;
 
 #[derive(Clone, Copy, Debug)]
@@ -204,13 +207,88 @@ unsafe fn nearest_color_avx2(palette: &PaletteSoA, r: i16, g: i16, b: i16) -> us
     best_idx
 }
 
+#[cfg(target_arch = "aarch64")]
+unsafe fn nearest_color_neon(palette: &PaletteSoA, r: i16, g: i16, b: i16) -> usize {
+    let mut best_idx = 0_usize;
+    let mut best_dist = i32::MAX;
+    let mut i = 0_usize;
+
+    let qr = vdupq_n_s16(r);
+    let qg = vdupq_n_s16(g);
+    let qb = vdupq_n_s16(b);
+
+    while i + 8 <= palette.len {
+        let pr = vld1q_s16(palette.r.as_ptr().add(i));
+        let pg = vld1q_s16(palette.g.as_ptr().add(i));
+        let pb = vld1q_s16(palette.b.as_ptr().add(i));
+
+        let dr = vsubq_s16(qr, pr);
+        let dg = vsubq_s16(qg, pg);
+        let db = vsubq_s16(qb, pb);
+
+        let dr_lo = vmovl_s16(vget_low_s16(dr));
+        let dg_lo = vmovl_s16(vget_low_s16(dg));
+        let db_lo = vmovl_s16(vget_low_s16(db));
+        let dr_hi = vmovl_s16(vget_high_s16(dr));
+        let dg_hi = vmovl_s16(vget_high_s16(dg));
+        let db_hi = vmovl_s16(vget_high_s16(db));
+
+        let dist_lo = vaddq_s32(
+            vaddq_s32(vmulq_s32(dr_lo, dr_lo), vmulq_s32(dg_lo, dg_lo)),
+            vmulq_s32(db_lo, db_lo),
+        );
+        let dist_hi = vaddq_s32(
+            vaddq_s32(vmulq_s32(dr_hi, dr_hi), vmulq_s32(dg_hi, dg_hi)),
+            vmulq_s32(db_hi, db_hi),
+        );
+
+        let mut lanes = [0_i32; 8];
+        vst1q_s32(lanes.as_mut_ptr(), dist_lo);
+        vst1q_s32(lanes.as_mut_ptr().add(4), dist_hi);
+
+        for (lane, &dist) in lanes.iter().enumerate() {
+            if dist < best_dist {
+                best_dist = dist;
+                best_idx = i + lane;
+            }
+        }
+
+        i += 8;
+    }
+
+    while i < palette.len {
+        let dr = (r - palette.r[i]) as i32;
+        let dg = (g - palette.g[i]) as i32;
+        let db = (b - palette.b[i]) as i32;
+        let dist = dr * dr + dg * dg + db * db;
+
+        if dist < best_dist {
+            best_dist = dist;
+            best_idx = i;
+        }
+
+        i += 1;
+    }
+
+    best_idx
+}
+
 #[cfg(target_arch = "x86_64")]
+type NearestColorImpl = fn(&PaletteSoA, i16, i16, i16) -> usize;
+
+#[cfg(target_arch = "aarch64")]
 type NearestColorImpl = fn(&PaletteSoA, i16, i16, i16) -> usize;
 
 #[cfg(target_arch = "x86_64")]
 #[inline]
 fn nearest_color_avx2_dispatch(palette: &PaletteSoA, r: i16, g: i16, b: i16) -> usize {
     unsafe { nearest_color_avx2(palette, r, g, b) }
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline]
+fn nearest_color_neon_dispatch(palette: &PaletteSoA, r: i16, g: i16, b: i16) -> usize {
+    unsafe { nearest_color_neon(palette, r, g, b) }
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -225,6 +303,14 @@ fn nearest_color_impl() -> NearestColorImpl {
             nearest_color_scalar
         }
     })
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline]
+fn nearest_color_impl() -> NearestColorImpl {
+    static IMPL: OnceLock<NearestColorImpl> = OnceLock::new();
+
+    *IMPL.get_or_init(|| nearest_color_neon_dispatch)
 }
 
 /// Expand a palette using deterministic farthest-point sampling from opaque source pixels.
@@ -308,12 +394,12 @@ pub(crate) fn expand_palette_with_farthest_points(
 #[inline]
 #[must_use]
 pub(crate) fn nearest_color(palette: &PaletteSoA, r: i16, g: i16, b: i16) -> usize {
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
         nearest_color_impl()(palette, r, g, b)
     }
 
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     {
         nearest_color_scalar(palette, r, g, b)
     }
@@ -518,6 +604,31 @@ mod tests {
 
     #[test]
     fn test_nearest_color_matches_scalar() {
+        let palette = PaletteSoA::from_tuples(&[
+            (0, 0, 0),
+            (255, 255, 255),
+            (64, 128, 192),
+            (192, 64, 32),
+            (32, 192, 64),
+            (128, 32, 192),
+            (16, 16, 240),
+            (240, 16, 16),
+            (16, 240, 16),
+        ]);
+
+        for r in [0_i16, 1, 15, 32, 63, 64, 127, 128, 191, 192, 223, 255] {
+            for g in [0_i16, 17, 64, 96, 128, 160, 192, 224, 255] {
+                for b in [0_i16, 8, 16, 31, 64, 127, 128, 191, 240, 255] {
+                    let expected = nearest_color_scalar(&palette, r, g, b);
+                    assert_eq!(nearest_color(&palette, r, g, b), expected);
+                }
+            }
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn test_nearest_color_matches_scalar_aarch64() {
         let palette = PaletteSoA::from_tuples(&[
             (0, 0, 0),
             (255, 255, 255),
