@@ -2,7 +2,7 @@
 
 use crate::quantize::dither::{dither_floyd_steinberg_serpentine, dither_ordered};
 use crate::quantize::kmeans::{
-    expand_palette_with_farthest_points, nearest_color, refine_palette_weighted_unique, PaletteSoA,
+    expand_palette_with_farthest_points, refine_palette_weighted_unique,
 };
 use crate::quantize::wu::generate_palette;
 use std::collections::{BTreeMap, BTreeSet};
@@ -16,18 +16,6 @@ pub(crate) const OPAQUE_ALPHA_THRESHOLD: u8 = 128;
 const QUALITY_REFINEMENT_NONE_MAX: u8 = 30;
 const QUALITY_REFINEMENT_SINGLE_MIN: u8 = QUALITY_REFINEMENT_NONE_MAX + 1;
 const QUALITY_REFINEMENT_SINGLE_MAX: u8 = 70;
-const QUALITY_REFINEMENT_HIGH_MIN: u8 = QUALITY_REFINEMENT_SINGLE_MAX + 1;
-const SEEDED_ZERO_REFINE_FREE_SLOTS: usize = 16;
-const SEEDED_ZERO_REFINE_MAX_MEAN_SAMPLE_SSE: u64 = 8;
-const SEEDED_ZERO_REFINE_MAX_SAMPLE_SSE: u64 = 64;
-const SAMPLED_PALETTE_ERROR_SAMPLE_LIMIT: usize = 1024;
-const DITHER_MIN_SAMPLES: u64 = 16;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct SampledPaletteErrorStats {
-    mean_sse: u64,
-    max_sse: u64,
-}
 
 struct InitialPalette {
     palette: Vec<(u8, u8, u8)>,
@@ -56,87 +44,8 @@ fn refinement_iterations(quality: u8, deduped_seed_count: usize) -> u32 {
 }
 
 #[inline]
-fn sampled_palette_error_stats(
-    rgba_pixels: &[u8],
-    palette: &PaletteSoA,
-) -> Option<SampledPaletteErrorStats> {
-    if palette.len == 0 {
-        return None;
-    }
-
-    let stride = (rgba_pixels.len() / 4)
-        .div_ceil(SAMPLED_PALETTE_ERROR_SAMPLE_LIMIT)
-        .max(1);
-    let mut samples = 0_u64;
-    let mut total_error = 0_u64;
-    let mut max_error = 0_u64;
-
-    for (index, px) in rgba_pixels.chunks_exact(4).enumerate() {
-        if index % stride != 0 || px[3] < OPAQUE_ALPHA_THRESHOLD {
-            continue;
-        }
-
-        let nearest = nearest_color(
-            palette,
-            i16::from(px[0]),
-            i16::from(px[1]),
-            i16::from(px[2]),
-        );
-        let dr = i32::from(px[0]) - i32::from(palette.r[nearest]);
-        let dg = i32::from(px[1]) - i32::from(palette.g[nearest]);
-        let db = i32::from(px[2]) - i32::from(palette.b[nearest]);
-        let error = (dr * dr + dg * dg + db * db) as u64;
-        total_error += error;
-        max_error = max_error.max(error);
-        samples += 1;
-
-        if samples >= SAMPLED_PALETTE_ERROR_SAMPLE_LIMIT as u64 {
-            break;
-        }
-    }
-
-    if samples < DITHER_MIN_SAMPLES {
-        return None;
-    }
-
-    Some(SampledPaletteErrorStats {
-        mean_sse: total_error / samples,
-        max_sse: max_error,
-    })
-}
-
-#[inline]
-fn sampled_seeded_palette_error_is_low(rgba_pixels: &[u8], palette: &[(u8, u8, u8)]) -> bool {
-    let palette = PaletteSoA::from_tuples(palette);
-
-    sampled_palette_error_stats(rgba_pixels, &palette).is_some_and(|stats| {
-        stats.mean_sse <= SEEDED_ZERO_REFINE_MAX_MEAN_SAMPLE_SSE
-            && stats.max_sse <= SEEDED_ZERO_REFINE_MAX_SAMPLE_SSE
-    })
-}
-
-#[inline]
 fn uses_ordered_dither(quality: u8) -> bool {
     quality <= QUALITY_REFINEMENT_SINGLE_MAX
-}
-
-#[inline]
-fn seeded_zero_refine_shortcut(
-    rgba_pixels: &[u8],
-    initial_palette: &[(u8, u8, u8)],
-    quality: u8,
-    deduped_seed_count: usize,
-    max_colors: usize,
-) -> bool {
-    if quality < QUALITY_REFINEMENT_HIGH_MIN || deduped_seed_count == 0 {
-        return false;
-    }
-
-    if deduped_seed_count < max_colors.saturating_sub(SEEDED_ZERO_REFINE_FREE_SLOTS) {
-        return false;
-    }
-
-    sampled_seeded_palette_error_is_low(rgba_pixels, initial_palette)
 }
 
 #[inline]
@@ -285,18 +194,7 @@ pub(crate) fn quantize_rgba_with_seed_colors(
     }
 
     let initial_palette = initial_palette_for_quantization(rgba_pixels, max_colors, seed_colors);
-    let iterations = if seed_colors.is_some()
-        && seeded_zero_refine_shortcut(
-            rgba_pixels,
-            &initial_palette.palette,
-            quality,
-            initial_palette.deduped_seed_count,
-            max_colors,
-        ) {
-        0
-    } else {
-        refinement_iterations(quality, initial_palette.deduped_seed_count)
-    };
+    let iterations = refinement_iterations(quality, initial_palette.deduped_seed_count);
 
     let palette = refine_palette_weighted_unique(rgba_pixels, &initial_palette.palette, iterations);
     let indices = if uses_ordered_dither(quality) {
@@ -407,108 +305,20 @@ mod tests {
     }
 
     #[test]
-    fn seeded_zero_refine_shortcut_requires_high_quality() {
-        let pixels = [0, 0, 0, 255, 255, 255, 255, 255];
-        let palette = vec![(0, 0, 0), (255, 255, 255)];
-
-        assert!(!seeded_zero_refine_shortcut(
-            &pixels, &palette, 70, 255, 256
-        ));
-    }
-
-    #[test]
-    fn seeded_zero_refine_shortcut_accepts_low_error_near_cap_palettes() {
-        let mut palette = Vec::with_capacity(240);
-        let mut pixels = Vec::with_capacity(240 * 4);
-
-        for value in 0_u8..=239 {
-            palette.push((value, value, value));
-            pixels.extend_from_slice(&[value, value, value, 255]);
-        }
-
-        assert!(seeded_zero_refine_shortcut(&pixels, &palette, 80, 240, 256));
-    }
-
-    #[test]
-    fn seeded_zero_refine_shortcut_rejects_high_mean_palettes() {
-        let mut palette = Vec::with_capacity(240);
-        let mut pixels = Vec::with_capacity(240 * 4);
-
-        for value in 0_u8..=255 {
-            if (8..=23).contains(&value) {
-                continue;
-            }
-
-            palette.push((value, 0, 0));
-            pixels.extend_from_slice(&[20, 0, 0, 255]);
-        }
-
-        assert_eq!(palette.len(), 240);
-        assert!(!seeded_zero_refine_shortcut(
-            &pixels, &palette, 80, 240, 256
-        ));
-    }
-
-    #[test]
-    fn seeded_zero_refine_shortcut_rejects_high_max_palettes() {
-        let mut palette = Vec::with_capacity(240);
-        let mut pixels = Vec::with_capacity(240 * 4);
-
-        for value in 0_u8..=238 {
-            palette.push((value, value, value));
-            pixels.extend_from_slice(&[value, value, value, 255]);
-        }
-
-        palette.push((239, 239, 239));
-        pixels.extend_from_slice(&[255, 255, 255, 255]);
-
-        assert!(!seeded_zero_refine_shortcut(
-            &pixels, &palette, 80, 240, 256
-        ));
-        assert_eq!(refinement_iterations(80, 240), 3);
-    }
-
-    #[test]
-    fn seeded_zero_refine_shortcut_ignores_empty_seed_fallback() {
-        let pixels = vec![1, 2, 3, 255, 4, 5, 6, 255];
-        let initial = initial_palette_for_quantization(&pixels, 256, Some(&[]));
-
-        assert_eq!(initial.deduped_seed_count, 0);
-        assert!(!seeded_zero_refine_shortcut(
-            &pixels,
-            &initial.palette,
-            80,
-            initial.deduped_seed_count,
-            256,
-        ));
-        assert_eq!(refinement_iterations(80, initial.deduped_seed_count), 4);
-    }
-
-    #[test]
     fn refinement_iterations_keeps_low_and_mid_quality_stable() {
         assert_eq!(refinement_iterations(20, 240), 0);
         assert_eq!(refinement_iterations(50, 240), 1);
     }
 
     #[test]
-    fn uses_ordered_dither_up_to_seventy() {
-        assert!(uses_ordered_dither(70));
-        assert!(!uses_ordered_dither(71));
+    fn refinement_iterations_keeps_seeded_high_quality_on_refinement() {
+        assert_eq!(refinement_iterations(80, 240), 3);
+        assert_eq!(refinement_iterations(80, 0), 4);
     }
 
     #[test]
-    fn sampled_palette_error_stats_ignores_transparent_pixels() {
-        let palette = PaletteSoA::from_tuples(&[(0, 0, 0), (255, 255, 255)]);
-        let mut pixels = Vec::new();
-
-        for _ in 0..16 {
-            pixels.extend_from_slice(&[0, 0, 0, 255]);
-        }
-        pixels.extend_from_slice(&[255, 0, 0, 0]);
-
-        let stats = sampled_palette_error_stats(&pixels, &palette).unwrap();
-
-        assert_eq!(stats.mean_sse, 0);
-        assert_eq!(stats.max_sse, 0);
+    fn uses_ordered_dither_up_to_seventy() {
+        assert!(uses_ordered_dither(70));
+        assert!(!uses_ordered_dither(71));
     }
 }

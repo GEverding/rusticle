@@ -98,7 +98,7 @@ Design proposal. Tiers are tagged inline as [COMMITTED], [NEW], [EXPERIMENT], or
                           │ miss / unavailable
                           ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ TIER 3  ─  SEEDED + ZERO REFINE                      [NEW]      │
+│ TIER 3  ─  SEEDED + ZERO REFINE                  [EXPERIMENT]   │
 │ ─────────────────────────────────────────                       │
 │  IF source palette has strong coverage                           │
 │      (deduped seed count ≥ 240)                                  │
@@ -106,6 +106,7 @@ Design proposal. Tiers are tagged inline as [COMMITTED], [NEW], [EXPERIMENT], or
 │  THEN skip k-means entirely, go straight to remap                │
 │  COST: dedup + sampled error check, then final remap             │
 │  HITS: cartoons / indexed sources with full palettes             │
+│  STATUS: evaluated + reverted; not landed by default             │
 │  SEE: df81dfa                                                    │
 └─────────────────────────┬───────────────────────────────────────┘
                           │ miss
@@ -171,7 +172,7 @@ Design proposal. Tiers are tagged inline as [COMMITTED], [NEW], [EXPERIMENT], or
 | 0 LUT | LUT-stable inputs, default CLI pipeline | tiny per frame |
 | 1 exact256 | indexed sources, pixel art, voyager-class | ~one hash pass |
 | 2 temporal reuse | long stable animations | sample scan + LUT (proposed) |
-| 3 seeded no-refine | cartoon / strong indexed palette | dedup + sample |
+| 3 seeded no-refine | cartoon / strong indexed palette | dedup + sample (evaluated/reverted) |
 | 4 seeded light refine | photo-like, drifted palette | small k-means on unique colors |
 | 5 full Wu+fill+refine | rare worst case | largest |
 
@@ -187,7 +188,7 @@ Design proposal. Tiers are tagged inline as [COMMITTED], [NEW], [EXPERIMENT], or
 | Adversarial / extreme | 5 |
 
 ## Roadmap (priority order)
-1. Tier 3 — seeded zero-refine shortcut
+1. Tier 3 — seeded zero-refine shortcut (evaluated/reverted)
 2. Dither decision gate — sampled error-based
 3. Tier 2 — temporal palette reuse (design / experiment only)
 4. Region-aware work allocation (speculative)
