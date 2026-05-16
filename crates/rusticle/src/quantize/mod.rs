@@ -3,7 +3,7 @@
 use crate::quantize::dither::{dither_floyd_steinberg_serpentine, dither_ordered};
 use crate::quantize::kmeans::{expand_palette_with_farthest_points, refine_palette};
 use crate::quantize::wu::generate_palette;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 
 pub(crate) mod dither;
@@ -66,6 +66,48 @@ fn pack_rgb(r: u8, g: u8, b: u8) -> u32 {
 #[inline]
 fn unpack_rgb(rgb: u32) -> (u8, u8, u8) {
     ((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8)
+}
+
+fn exact_palette_if_small(rgba_pixels: &[u8], max_colors: usize) -> Option<(Vec<u8>, Vec<u8>)> {
+    let pixel_count = rgba_pixels.len() / 4;
+    let mut colors = BTreeSet::new();
+
+    for pixel in rgba_pixels.chunks_exact(4) {
+        if pixel[3] < OPAQUE_ALPHA_THRESHOLD {
+            continue;
+        }
+
+        colors.insert(pack_rgb(pixel[0], pixel[1], pixel[2]));
+        if colors.len() > max_colors {
+            return None;
+        }
+    }
+
+    let palette: Vec<u8> = colors
+        .iter()
+        .flat_map(|&rgb| {
+            let (r, g, b) = unpack_rgb(rgb);
+            [r, g, b]
+        })
+        .collect();
+
+    let index_by_color: BTreeMap<u32, u8> = colors
+        .iter()
+        .enumerate()
+        .map(|(index, &rgb)| (rgb, index as u8))
+        .collect();
+
+    let mut indices = Vec::with_capacity(pixel_count);
+    for pixel in rgba_pixels.chunks_exact(4) {
+        if pixel[3] < OPAQUE_ALPHA_THRESHOLD {
+            indices.push(0);
+        } else {
+            let rgb = pack_rgb(pixel[0], pixel[1], pixel[2]);
+            indices.push(index_by_color[&rgb]);
+        }
+    }
+
+    Some((palette, indices))
 }
 
 fn dedup_seed_colors(seed_colors: &[(u8, u8, u8)], max_colors: usize) -> Vec<(u8, u8, u8)> {
@@ -179,6 +221,11 @@ pub(crate) fn quantize_rgba_with_seed_colors(
         .chunks_exact(4)
         .any(|px| px[3] < OPAQUE_ALPHA_THRESHOLD);
     let max_colors = if has_transparency { 255 } else { 256 };
+
+    if let Some((palette, indices)) = exact_palette_if_small(rgba_pixels, max_colors) {
+        return (palette, indices);
+    }
+
     let initial_palette = initial_palette_for_quantization(rgba_pixels, max_colors, seed_colors);
     let iterations = refinement_iterations(
         quality,
@@ -234,6 +281,47 @@ mod tests {
 
         assert_eq!(palette, vec![(0, 255, 0), (1, 2, 3)]);
         assert_eq!(palette.len(), 2);
+    }
+
+    #[test]
+    fn exact_palette_hits_for_small_opaque_input() {
+        let rgba_pixels = [9, 1, 2, 255, 7, 8, 9, 255, 9, 1, 2, 255, 7, 8, 9, 255];
+
+        let result = exact_palette_if_small(&rgba_pixels, 256).unwrap();
+
+        assert_eq!(result.0, vec![7, 8, 9, 9, 1, 2]);
+        assert_eq!(result.1, vec![1, 0, 1, 0]);
+    }
+
+    #[test]
+    fn exact_palette_keeps_transparency_placeholder_zero() {
+        let rgba_pixels = [1, 2, 3, 0, 9, 9, 9, 255, 4, 5, 6, 0, 9, 9, 9, 255];
+
+        let result = exact_palette_if_small(&rgba_pixels, 255).unwrap();
+
+        assert_eq!(result.0, vec![9, 9, 9]);
+        assert_eq!(result.1, vec![0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn exact_palette_rejects_more_than_max_colors() {
+        let mut rgba_pixels = Vec::new();
+        for value in 0u8..=255 {
+            rgba_pixels.extend_from_slice(&[value, 0, 0, 255]);
+        }
+        rgba_pixels.extend_from_slice(&[0, 0, 1, 255]);
+
+        assert!(exact_palette_if_small(&rgba_pixels, 256).is_none());
+    }
+
+    #[test]
+    fn exact_palette_is_deterministic() {
+        let rgba_pixels = [4, 5, 6, 255, 1, 2, 3, 255, 9, 9, 9, 255, 1, 2, 3, 255];
+
+        let first = exact_palette_if_small(&rgba_pixels, 256).unwrap();
+        let second = exact_palette_if_small(&rgba_pixels, 256).unwrap();
+
+        assert_eq!(first, second);
     }
 
     #[test]
