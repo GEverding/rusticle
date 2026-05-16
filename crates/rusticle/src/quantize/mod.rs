@@ -1,7 +1,9 @@
 //! Color quantization internals.
 
 use crate::quantize::dither::{dither_floyd_steinberg_serpentine, dither_ordered};
-use crate::quantize::kmeans::{expand_palette_with_farthest_points, refine_palette};
+use crate::quantize::kmeans::{
+    expand_palette_with_farthest_points, refine_palette_weighted_unique,
+};
 use crate::quantize::wu::generate_palette;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -194,7 +196,7 @@ pub(crate) fn quantize_rgba_with_seed_colors(
     let initial_palette = initial_palette_for_quantization(rgba_pixels, max_colors, seed_colors);
     let iterations = refinement_iterations(quality, initial_palette.deduped_seed_count);
 
-    let palette = refine_palette(rgba_pixels, &initial_palette.palette, iterations);
+    let palette = refine_palette_weighted_unique(rgba_pixels, &initial_palette.palette, iterations);
     let indices = if uses_ordered_dither(quality) {
         dither_ordered(&palette, rgba_pixels, width, height, quality as f32 / 200.0)
     } else {
@@ -211,7 +213,9 @@ pub(crate) fn derive_palette(rgba_pixels: &[u8]) -> Vec<u8> {
     }
 
     let initial_palette = generate_palette(rgba_pixels, 256);
-    refine_palette(rgba_pixels, &initial_palette, 1).to_flat_rgb()
+    let palette = refine_palette_weighted_unique(rgba_pixels, &initial_palette, 1);
+
+    palette.to_flat_rgb()
 }
 
 #[cfg(test)]

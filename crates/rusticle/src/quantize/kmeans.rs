@@ -8,6 +8,14 @@ use std::arch::x86_64::*;
 
 use crate::quantize::OPAQUE_ALPHA_THRESHOLD;
 
+#[derive(Clone, Copy, Debug)]
+struct WeightedColor {
+    r: i16,
+    g: i16,
+    b: i16,
+    weight: i64,
+}
+
 /// SoA palette layout for autovectorization-friendly distance computation.
 #[derive(Clone, Debug)]
 pub(crate) struct PaletteSoA {
@@ -92,6 +100,29 @@ fn dist_sq_rgb(a: (u8, u8, u8), b: (u8, u8, u8)) -> u32 {
     let dg = i32::from(a.1) - i32::from(b.1);
     let db = i32::from(a.2) - i32::from(b.2);
     (dr * dr + dg * dg + db * db) as u32
+}
+
+fn unique_opaque_colors(rgba_pixels: &[u8]) -> Vec<WeightedColor> {
+    let mut counts = std::collections::BTreeMap::new();
+    for px in rgba_pixels.chunks_exact(4) {
+        if px[3] >= OPAQUE_ALPHA_THRESHOLD {
+            let rgb = pack_rgb(px[0], px[1], px[2]);
+            *counts.entry(rgb).or_insert(0_i64) += 1;
+        }
+    }
+
+    counts
+        .into_iter()
+        .map(|(rgb, weight)| {
+            let (r, g, b) = unpack_rgb(rgb);
+            WeightedColor {
+                r: i16::from(r),
+                g: i16::from(g),
+                b: i16::from(b),
+                weight,
+            }
+        })
+        .collect()
 }
 
 #[inline]
@@ -289,6 +320,7 @@ pub(crate) fn nearest_color(palette: &PaletteSoA, r: i16, g: i16, b: i16) -> usi
 }
 
 /// Refine a palette using k-means iterations.
+#[cfg(test)]
 #[must_use]
 pub(crate) fn refine_palette(
     rgba_pixels: &[u8],
@@ -340,7 +372,56 @@ pub(crate) fn refine_palette(
     palette
 }
 
+/// Refine a palette using k-means iterations over unique opaque RGB colors.
+#[must_use]
+pub(crate) fn refine_palette_weighted_unique(
+    rgba_pixels: &[u8],
+    initial_palette: &[(u8, u8, u8)],
+    iterations: u32,
+) -> PaletteSoA {
+    let mut palette = PaletteSoA::from_tuples(initial_palette);
+
+    if iterations == 0 || palette.len == 0 {
+        return palette;
+    }
+
+    let colors = unique_opaque_colors(rgba_pixels);
+    if colors.is_empty() {
+        return palette;
+    }
+
+    for _ in 0..iterations {
+        let mut sum_r = vec![0_i64; palette.len];
+        let mut sum_g = vec![0_i64; palette.len];
+        let mut sum_b = vec![0_i64; palette.len];
+        let mut counts = vec![0_i64; palette.len];
+
+        for color in &colors {
+            let idx = nearest_color(&palette, color.r, color.g, color.b);
+
+            sum_r[idx] += i64::from(color.r) * color.weight;
+            sum_g[idx] += i64::from(color.g) * color.weight;
+            sum_b[idx] += i64::from(color.b) * color.weight;
+            counts[idx] += color.weight;
+        }
+
+        for i in 0..palette.len {
+            let count = counts[i];
+            if count == 0 {
+                continue;
+            }
+
+            palette.r[i] = ((sum_r[i] + count / 2) / count) as i16;
+            palette.g[i] = ((sum_g[i] + count / 2) / count) as i16;
+            palette.b[i] = ((sum_b[i] + count / 2) / count) as i16;
+        }
+    }
+
+    palette
+}
+
 /// Assign every pixel to its nearest palette color, returning indices.
+#[cfg(test)]
 #[must_use]
 pub(crate) fn map_pixels(palette: &PaletteSoA, rgba_pixels: &[u8]) -> Vec<u8> {
     if rgba_pixels.is_empty() {
@@ -483,6 +564,38 @@ mod tests {
         let after = sse(&refined, &pixels);
 
         assert!(after < before);
+    }
+
+    #[test]
+    fn test_weighted_unique_matches_pixelwise_for_duplicates() {
+        let pixels = rgba(&[
+            (12, 18, 24, 255),
+            (12, 18, 24, 255),
+            (12, 18, 24, 255),
+            (220, 210, 200, 255),
+            (220, 210, 200, 255),
+        ]);
+        let initial = [(0, 0, 0), (255, 255, 255)];
+
+        let pixelwise = refine_palette(&pixels, &initial, 1).to_tuples();
+        let weighted = refine_palette_weighted_unique(&pixels, &initial, 1).to_tuples();
+
+        assert_eq!(weighted, pixelwise);
+    }
+
+    #[test]
+    fn test_weighted_unique_handles_empty_and_transparent_input() {
+        let initial = [(10, 20, 30), (40, 50, 60)];
+        let transparent = rgba(&[(1, 2, 3, 0), (4, 5, 6, 127)]);
+
+        assert_eq!(
+            refine_palette_weighted_unique(&[], &initial, 1).to_tuples(),
+            initial
+        );
+        assert_eq!(
+            refine_palette_weighted_unique(&transparent, &initial, 1).to_tuples(),
+            initial
+        );
     }
 
     #[test]
