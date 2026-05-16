@@ -4,6 +4,8 @@ outputs/
 samples/
 .DS_Store
 bench_results.jsonl
+.tmp-build/
+target-broadcmp-current/
 
 # Beads / Dolt files (added by bd init)
 .dolt/

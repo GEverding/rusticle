@@ -1,6 +1,6 @@
 //! Color quantization internals.
 
-use crate::quantize::dither::{dither_floyd_steinberg_serpentine, dither_none, dither_ordered};
+use crate::quantize::dither::{dither_floyd_steinberg_serpentine, dither_ordered};
 use crate::quantize::kmeans::{
     expand_palette_with_farthest_points, nearest_color, refine_palette_weighted_unique, PaletteSoA,
 };
@@ -22,36 +22,11 @@ const SEEDED_ZERO_REFINE_MAX_MEAN_SAMPLE_SSE: u64 = 8;
 const SEEDED_ZERO_REFINE_MAX_SAMPLE_SSE: u64 = 64;
 const SAMPLED_PALETTE_ERROR_SAMPLE_LIMIT: usize = 1024;
 const DITHER_MIN_SAMPLES: u64 = 16;
-const DITHER_NO_DITHER_MAX_MEAN_SAMPLE_SSE: u64 = 1;
-const DITHER_NO_DITHER_MAX_SAMPLE_SSE: u64 = 4;
-const DITHER_HIGH_QUALITY_ORDERED_MAX_MEAN_SAMPLE_SSE: u64 = 4;
-const DITHER_HIGH_QUALITY_ORDERED_MAX_SAMPLE_SSE: u64 = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct SampledPaletteErrorStats {
     mean_sse: u64,
     max_sse: u64,
-}
-
-impl SampledPaletteErrorStats {
-    #[inline]
-    fn is_tiny(self) -> bool {
-        self.mean_sse <= DITHER_NO_DITHER_MAX_MEAN_SAMPLE_SSE
-            && self.max_sse <= DITHER_NO_DITHER_MAX_SAMPLE_SSE
-    }
-
-    #[inline]
-    fn allows_high_quality_ordered(self) -> bool {
-        self.mean_sse <= DITHER_HIGH_QUALITY_ORDERED_MAX_MEAN_SAMPLE_SSE
-            && self.max_sse <= DITHER_HIGH_QUALITY_ORDERED_MAX_SAMPLE_SSE
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum DitherMode {
-    NoDither,
-    Ordered,
-    FloydSteinberg,
 }
 
 struct InitialPalette {
@@ -141,20 +116,8 @@ fn sampled_seeded_palette_error_is_low(rgba_pixels: &[u8], palette: &[(u8, u8, u
 }
 
 #[inline]
-fn dither_mode_for_quality(quality: u8, stats: Option<SampledPaletteErrorStats>) -> DitherMode {
-    match stats {
-        None => {
-            if quality <= QUALITY_REFINEMENT_SINGLE_MAX {
-                DitherMode::Ordered
-            } else {
-                DitherMode::FloydSteinberg
-            }
-        }
-        Some(stats) if stats.is_tiny() => DitherMode::NoDither,
-        Some(_stats) if quality <= QUALITY_REFINEMENT_SINGLE_MAX => DitherMode::Ordered,
-        Some(stats) if stats.allows_high_quality_ordered() => DitherMode::Ordered,
-        Some(_) => DitherMode::FloydSteinberg,
-    }
+fn uses_ordered_dither(quality: u8) -> bool {
+    quality <= QUALITY_REFINEMENT_SINGLE_MAX
 }
 
 #[inline]
@@ -336,16 +299,10 @@ pub(crate) fn quantize_rgba_with_seed_colors(
     };
 
     let palette = refine_palette_weighted_unique(rgba_pixels, &initial_palette.palette, iterations);
-    let dither_mode =
-        dither_mode_for_quality(quality, sampled_palette_error_stats(rgba_pixels, &palette));
-    let indices = match dither_mode {
-        DitherMode::NoDither => dither_none(&palette, rgba_pixels),
-        DitherMode::Ordered => {
-            dither_ordered(&palette, rgba_pixels, width, height, quality as f32 / 200.0)
-        }
-        DitherMode::FloydSteinberg => {
-            dither_floyd_steinberg_serpentine(&palette, rgba_pixels, width, height)
-        }
+    let indices = if uses_ordered_dither(quality) {
+        dither_ordered(&palette, rgba_pixels, width, height, quality as f32 / 200.0)
+    } else {
+        dither_floyd_steinberg_serpentine(&palette, rgba_pixels, width, height)
     };
 
     (palette.to_flat_rgb(), indices)
@@ -366,10 +323,6 @@ pub(crate) fn derive_palette(rgba_pixels: &[u8]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn stats(mean_sse: u64, max_sse: u64) -> SampledPaletteErrorStats {
-        SampledPaletteErrorStats { mean_sse, max_sse }
-    }
 
     #[test]
     fn seeded_palette_dedups_deterministically() {
@@ -538,43 +491,9 @@ mod tests {
     }
 
     #[test]
-    fn dither_mode_stays_ordered_for_low_and_mid_quality() {
-        assert_eq!(
-            dither_mode_for_quality(30, Some(stats(2, 4))),
-            DitherMode::Ordered
-        );
-        assert_eq!(
-            dither_mode_for_quality(70, Some(stats(2, 4))),
-            DitherMode::Ordered
-        );
-    }
-
-    #[test]
-    fn dither_mode_uses_no_dither_for_tiny_error() {
-        assert_eq!(
-            dither_mode_for_quality(20, Some(stats(0, 0))),
-            DitherMode::NoDither
-        );
-        assert_eq!(
-            dither_mode_for_quality(80, Some(stats(1, 4))),
-            DitherMode::NoDither
-        );
-    }
-
-    #[test]
-    fn dither_mode_defaults_to_fs_for_high_error() {
-        assert_eq!(
-            dither_mode_for_quality(80, Some(stats(12, 128))),
-            DitherMode::FloydSteinberg
-        );
-    }
-
-    #[test]
-    fn dither_mode_allows_high_quality_ordered_on_low_error() {
-        assert_eq!(
-            dither_mode_for_quality(80, Some(stats(4, 16))),
-            DitherMode::Ordered
-        );
+    fn uses_ordered_dither_up_to_seventy() {
+        assert!(uses_ordered_dither(70));
+        assert!(!uses_ordered_dither(71));
     }
 
     #[test]

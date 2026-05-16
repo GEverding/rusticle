@@ -71,7 +71,7 @@ Other known baseline anchors:
   - thresholds: sample limit 1024, min samples 16, no-dither mean SSE <= 1 / max <= 4, high-quality ordered mean <= 4 / max <= 16
   - trio result vs baseline / tight zero-refine: quality unchanged, no meaningful speed win; mostly preserves current FS/ordered choices on the trio
   - final local single-run numbers: cartoon 97ms baseline / 93ms tight-zero-refine / 106ms dither-gate; Avg PSNR 40.60, BA 2.47 unchanged; photo 211ms baseline / 222ms tight-zero-refine / 213ms dither-gate; Avg PSNR 40.32, BA 2.57 unchanged; voyager 54ms baseline / 54ms tight-zero-refine / 53ms dither-gate; Avg PSNR 45.20, BA 3.01 unchanged
-  - decision: quality-safe but low impact on the original trio; keep only if corpus later shows wins, otherwise revert to avoid sample overhead
+  - decision: evaluated on the broader x86 corpus, then recommended for revert; the sample overhead did not justify the extra dispatch complexity
 
 - palette-space resize prototype
   - idea: resize in palette space instead of RGBA first
