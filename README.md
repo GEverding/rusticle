@@ -180,6 +180,10 @@ cargo check -p rusticle
 # CLI (release, for accurate perf)
 cargo build --release -p rusticle-cli
 
+# A/B quantizer builds
+cargo build --release -p rusticle-cli --no-default-features
+cargo build --release -p rusticle-bench --no-default-features
+
 # Tests
 cargo test -p rusticle
 

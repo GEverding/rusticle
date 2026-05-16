@@ -611,25 +611,8 @@ fn quantize_rgba(
 
     #[cfg(not(feature = "imagequant"))]
     {
-        let pixels: Vec<exoquant::Color> = rgba_pixels
-            .chunks_exact(4)
-            .map(|chunk| exoquant::Color::new(chunk[0], chunk[1], chunk[2], chunk[3]))
-            .collect();
-
-        let (palette, mut indices) = exoquant::convert_to_indexed(
-            &pixels,
-            width,
-            256,
-            &exoquant::optimizer::KMeans,
-            &exoquant::ditherer::None,
-        );
-
-        let mut palette_rgb = Vec::with_capacity(palette.len() * 3);
-        for color in palette {
-            palette_rgb.push(color.r);
-            palette_rgb.push(color.g);
-            palette_rgb.push(color.b);
-        }
+        let (mut palette_rgb, mut indices) =
+            crate::quantize::quantize_rgba(rgba_pixels, width, height, 80);
 
         let transparent_idx =
             find_transparent_index_and_remap(rgba_pixels, &mut indices, &mut palette_rgb);
@@ -720,25 +703,8 @@ fn quantize_rgba_with_stats(
 
     #[cfg(not(feature = "imagequant"))]
     {
-        let pixels: Vec<exoquant::Color> = rgba_pixels
-            .chunks_exact(4)
-            .map(|chunk| exoquant::Color::new(chunk[0], chunk[1], chunk[2], chunk[3]))
-            .collect();
-
-        let (palette, mut indices) = exoquant::convert_to_indexed(
-            &pixels,
-            width,
-            256,
-            &exoquant::optimizer::KMeans,
-            &exoquant::ditherer::None,
-        );
-
-        let mut palette_rgb = Vec::with_capacity(palette.len() * 3);
-        for color in palette {
-            palette_rgb.push(color.r);
-            palette_rgb.push(color.g);
-            palette_rgb.push(color.b);
-        }
+        let (mut palette_rgb, mut indices) =
+            crate::quantize::quantize_rgba(rgba_pixels, width, height, 80);
 
         let transparent_idx =
             find_transparent_index_and_remap(rgba_pixels, &mut indices, &mut palette_rgb);

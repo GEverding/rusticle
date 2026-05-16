@@ -59,29 +59,13 @@ pub fn derive_palette_from_rgba(rgba_pixels: &[u8]) -> Result<Vec<u8>> {
 }
 
 #[cfg(not(feature = "imagequant"))]
-/// Derive a 256-color palette from RGBA pixels using exoquant.
+/// Derive a 256-color palette from RGBA pixels using Wu quantization.
 pub fn derive_palette_from_rgba(rgba_pixels: &[u8]) -> Result<Vec<u8>> {
     if rgba_pixels.is_empty() {
         return Ok(vec![]);
     }
 
-    let pixels: Vec<exoquant::Color> = rgba_pixels
-        .chunks_exact(4)
-        .map(|chunk| exoquant::Color::new(chunk[0], chunk[1], chunk[2], chunk[3]))
-        .collect();
-    let histogram: exoquant::Histogram = pixels.iter().copied().collect();
-    let colorspace = exoquant::SimpleColorSpace::default();
-    let palette =
-        exoquant::generate_palette(&histogram, &colorspace, &exoquant::optimizer::KMeans, 256);
-
-    let mut palette_rgb = Vec::with_capacity(palette.len() * 3);
-    for color in palette {
-        palette_rgb.push(color.r);
-        palette_rgb.push(color.g);
-        palette_rgb.push(color.b);
-    }
-
-    Ok(palette_rgb)
+    Ok(crate::quantize::derive_palette(rgba_pixels))
 }
 
 /// Find transparent index and remap transparent pixels to it.

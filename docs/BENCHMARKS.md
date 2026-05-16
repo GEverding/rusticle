@@ -138,12 +138,19 @@ python3 scripts/download_test_gifs.py
 # Build CLI release binary
 cargo build --release -p rusticle-cli
 
+# Build both benchmarkable variants
+cargo build --release -p rusticle-cli --no-default-features
+cargo build --release -p rusticle-bench --no-default-features
+
 # Resize benchmark
 ./target/release/rusticle resize test_gifs/benchmark_suite/photo_01.gif /tmp/out.gif
 time gifsicle --resize 320x240 test_gifs/benchmark_suite/photo_01.gif -o /tmp/g.gif
 
 # Run full regression benchmark suite
 cargo run --release -p rusticle-bench
+
+# Run Wu-quantizer variant
+cargo run --release -p rusticle-bench --no-default-features
 ```
 
 ## Stable Regression Workflow

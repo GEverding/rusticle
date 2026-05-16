@@ -338,10 +338,8 @@ criterion_group!(
 );
 
 // ============================================================================
-// Quantization benchmarks: exoquant vs imagequant
+// Quantization benchmarks: imagequant
 // ============================================================================
-
-use exoquant::{convert_to_indexed, ditherer, optimizer, Color as ExoColor};
 
 /// Create realistic test image with gradients and varied colors
 fn create_test_image(width: usize, height: usize) -> Vec<u8> {
@@ -418,29 +416,6 @@ fn bench_imagequant_200x200(c: &mut Criterion) {
     });
 }
 
-fn bench_exoquant_200x200(c: &mut Criterion) {
-    let width = 200;
-    let height = 200;
-    let pixels = create_test_image(width, height);
-
-    c.bench_function("quantize_exoquant_200x200", |b| {
-        b.iter(|| {
-            let exo_pixels: Vec<ExoColor> = pixels
-                .chunks_exact(4)
-                .map(|chunk| ExoColor::new(chunk[0], chunk[1], chunk[2], chunk[3]))
-                .collect();
-
-            let (_palette, _indexed) = convert_to_indexed(
-                &exo_pixels,
-                width,
-                256,
-                &optimizer::KMeans,
-                &ditherer::FloydSteinberg::new(),
-            );
-        })
-    });
-}
-
 fn bench_imagequant_400x400(c: &mut Criterion) {
     let width = 400;
     let height = 400;
@@ -468,77 +443,6 @@ fn bench_imagequant_400x400(c: &mut Criterion) {
             let mut result = attr.quantize(&mut img).unwrap();
             result.set_dithering_level(1.0).unwrap();
             let (_palette, _indices) = result.remapped(&mut img).unwrap();
-        })
-    });
-}
-
-fn bench_exoquant_400x400(c: &mut Criterion) {
-    let width = 400;
-    let height = 400;
-    let pixels = create_photo_like_image(width, height);
-
-    c.bench_function("quantize_exoquant_400x400", |b| {
-        b.iter(|| {
-            let exo_pixels: Vec<ExoColor> = pixels
-                .chunks_exact(4)
-                .map(|chunk| ExoColor::new(chunk[0], chunk[1], chunk[2], chunk[3]))
-                .collect();
-
-            let (_palette, _indexed) = convert_to_indexed(
-                &exo_pixels,
-                width,
-                256,
-                &optimizer::KMeans,
-                &ditherer::FloydSteinberg::new(),
-            );
-        })
-    });
-}
-
-// Also benchmark exoquant without k-means optimization (faster but lower quality)
-fn bench_exoquant_no_kmeans_400x400(c: &mut Criterion) {
-    let width = 400;
-    let height = 400;
-    let pixels = create_photo_like_image(width, height);
-
-    c.bench_function("quantize_exoquant_no_kmeans_400x400", |b| {
-        b.iter(|| {
-            let exo_pixels: Vec<ExoColor> = pixels
-                .chunks_exact(4)
-                .map(|chunk| ExoColor::new(chunk[0], chunk[1], chunk[2], chunk[3]))
-                .collect();
-
-            let (_palette, _indexed) = convert_to_indexed(
-                &exo_pixels,
-                width,
-                256,
-                &optimizer::None, // No k-means optimization
-                &ditherer::FloydSteinberg::new(),
-            );
-        })
-    });
-}
-
-// Benchmark with ordered dithering (faster than Floyd-Steinberg)
-fn bench_exoquant_ordered_dither_400x400(c: &mut Criterion) {
-    let width = 400;
-    let height = 400;
-    let pixels = create_photo_like_image(width, height);
-
-    c.bench_function("quantize_exoquant_ordered_400x400", |b| {
-        b.iter(|| {
-            let exo_pixels: Vec<ExoColor> = pixels
-                .chunks_exact(4)
-                .map(|chunk| ExoColor::new(chunk[0], chunk[1], chunk[2], chunk[3]))
-                .collect();
-
-            let (_palette, _indexed) = convert_to_indexed(
-                &exo_pixels,
-                width,
-                256,
-                &optimizer::KMeans,
-                &ditherer::Ordered,
-            );
         })
     });
 }
@@ -675,11 +579,7 @@ fn bench_imagequant_quality_low(c: &mut Criterion) {
 criterion_group!(
     quantize_benches,
     bench_imagequant_200x200,
-    bench_exoquant_200x200,
     bench_imagequant_400x400,
-    bench_exoquant_400x400,
-    bench_exoquant_no_kmeans_400x400,
-    bench_exoquant_ordered_dither_400x400,
     bench_imagequant_speed_1,
     bench_imagequant_speed_3,
     bench_imagequant_speed_10,

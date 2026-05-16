@@ -13,7 +13,6 @@ gif = "0.13"
 thiserror = "1.0"
 tokio = { version = "1", features = ["rt", "io-util"], optional = true }
 imagequant = { version = "4", optional = true }
-exoquant = "0.2"
 fast_image_resize = "5"
 rayon = "1.10"
 serde = { version = "1", features = ["derive"], optional = true }
@@ -28,7 +27,7 @@ default = ["imagequant"]
 imagequant = ["dep:imagequant"]
 simd = []
 mit-only = []
-research = ["imagequant"]
+research = []
 async = ["tokio"]
 serde = ["dep:serde"]
 image = ["dep:image"]

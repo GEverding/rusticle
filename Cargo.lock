@@ -350,12 +350,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
-name = "exoquant"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5048aeecde83b7455a63b44aa54da5321d6171cff2adb8a5959849e142e5e4aa"
-
-[[package]]
 name = "fast_image_resize"
 version = "5.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -698,7 +692,6 @@ version = "0.1.0"
 dependencies = [
  "butteraugli",
  "criterion",
- "exoquant",
  "fast_image_resize",
  "gif",
  "image",

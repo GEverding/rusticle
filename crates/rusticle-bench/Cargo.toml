@@ -9,8 +9,12 @@ description = "Internal regression benchmark suite for rusticle"
 name = "rusticle-bench"
 path = "src/main.rs"
 
+[features]
+default = ["with-imagequant"]
+with-imagequant = ["rusticle/imagequant"]
+
 [dependencies]
-rusticle = { path = "../rusticle", features = ["serde", "butteraugli", "research", "imagequant"] }
+rusticle = { path = "../rusticle", default-features = false, features = ["serde", "butteraugli", "research", "simd"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }

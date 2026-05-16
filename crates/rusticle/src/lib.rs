@@ -28,11 +28,11 @@
 //!   Note: imagequant is GPL-3.0 licensed; enabling this feature means your compiled binary
 //!   includes GPL code.
 //! - **`mit-only`** — Use with `default-features = false` for a fully MIT-licensed dependency
-//!   chain using exoquant as the quantizer.
+//!   chain using the Wu quantizer.
 //! - **`serde`** — Serialize/deserialize `Filter`, `OptLevel`, `QualityMetrics`, etc.
 //! - **`image`** — Conversions between `Frame`/`Gif` and `image::RgbaImage`
 //! - **`butteraugli`** — Perceptual image quality metrics via butteraugli
-//! - **`research`** — Experimental research modules (implies imagequant)
+//! - **`research`** — Experimental research modules
 
 pub mod decode;
 pub mod encode;
@@ -41,6 +41,8 @@ pub(crate) mod gif_ops;
 pub mod optimize;
 pub mod palette_lut;
 pub mod quality;
+#[cfg(not(feature = "imagequant"))]
+mod quantize;
 pub mod resize;
 pub mod simd_opt;
 pub mod types;

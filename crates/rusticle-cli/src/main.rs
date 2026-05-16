@@ -6,6 +6,7 @@ use tikv_jemallocator::Jemalloc;
 static GLOBAL: Jemalloc = Jemalloc;
 
 mod adaptive_harness;
+#[cfg(feature = "with-imagequant")]
 mod voyager_study;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -33,6 +34,7 @@ enum Command {
     /// Run adaptive encoding benchmark harness.
     AdaptiveHarness(AdaptiveHarnessArgs),
     /// Run corrected voyager-class study.
+    #[cfg(feature = "with-imagequant")]
     VoyagerStudy(VoyagerStudyArgs),
 }
 
@@ -108,6 +110,7 @@ struct AdaptiveHarnessArgs {
     output_dir: PathBuf,
 }
 
+#[cfg(feature = "with-imagequant")]
 #[derive(Debug, Clone, Args)]
 struct VoyagerStudyArgs {
     /// Input voyager GIF file.
@@ -182,6 +185,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         Command::Resize(args) => run_resize(args),
         Command::Quality(args) => compare_quality(&args.original, &args.processed),
         Command::AdaptiveHarness(args) => run_adaptive_harness(args),
+        #[cfg(feature = "with-imagequant")]
         Command::VoyagerStudy(args) => run_voyager_study(args),
     }
 }
@@ -540,6 +544,7 @@ fn run_adaptive_harness(args: AdaptiveHarnessArgs) -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
+#[cfg(feature = "with-imagequant")]
 fn run_voyager_study(args: VoyagerStudyArgs) -> Result<(), Box<dyn Error>> {
     eprintln!("=== VOYAGER CORRECTED STUDY ===");
     eprintln!("Input: {}", args.input.display());
@@ -595,6 +600,7 @@ fn run_voyager_study(args: VoyagerStudyArgs) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(feature = "with-imagequant")]
 fn format_voyager_report(results: &voyager_study::StudyResults) -> String {
     let mut report = String::new();
     report.push_str("# Voyager Corrected Study Results\n\n");
