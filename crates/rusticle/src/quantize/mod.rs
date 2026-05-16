@@ -4,7 +4,6 @@ use crate::quantize::dither::{dither_floyd_steinberg_serpentine, dither_ordered}
 use crate::quantize::kmeans::{expand_palette_with_farthest_points, refine_palette};
 use crate::quantize::wu::generate_palette;
 use std::collections::{BTreeMap, BTreeSet};
-use std::env;
 
 pub(crate) mod dither;
 pub(crate) mod kmeans;
@@ -18,20 +17,15 @@ const QUALITY_REFINEMENT_SINGLE_MAX: u8 = 70;
 
 struct InitialPalette {
     palette: Vec<(u8, u8, u8)>,
-    seeded_path_active: bool,
     deduped_seed_count: usize,
 }
 
 #[inline]
-fn heuristic_refinement_iterations(
-    quality: u8,
-    seeded_path_active: bool,
-    deduped_seed_count: usize,
-) -> u32 {
+fn heuristic_refinement_iterations(quality: u8, deduped_seed_count: usize) -> u32 {
     match quality {
         0..=QUALITY_REFINEMENT_NONE_MAX => 0,
         QUALITY_REFINEMENT_SINGLE_MIN..=QUALITY_REFINEMENT_SINGLE_MAX => 1,
-        _ if seeded_path_active => {
+        _ if deduped_seed_count > 0 => {
             if deduped_seed_count <= 192 {
                 1
             } else {
@@ -43,14 +37,8 @@ fn heuristic_refinement_iterations(
 }
 
 #[inline]
-fn refinement_iterations(quality: u8, seeded_path_active: bool, deduped_seed_count: usize) -> u32 {
-    match env::var("RUSTICLE_EXPERIMENT_KMEANS_ITERS")
-        .ok()
-        .and_then(|value| value.parse::<u32>().ok())
-    {
-        Some(value) => value.clamp(1, 4),
-        None => heuristic_refinement_iterations(quality, seeded_path_active, deduped_seed_count),
-    }
+fn refinement_iterations(quality: u8, deduped_seed_count: usize) -> u32 {
+    heuristic_refinement_iterations(quality, deduped_seed_count)
 }
 
 #[inline]
@@ -110,11 +98,11 @@ fn exact_palette_if_small(rgba_pixels: &[u8], max_colors: usize) -> Option<(Vec<
     Some((palette, indices))
 }
 
-fn dedup_seed_colors(seed_colors: &[(u8, u8, u8)], max_colors: usize) -> Vec<(u8, u8, u8)> {
+fn dedup_seed_colors_from_arrays(seed_colors: &[[u8; 3]], max_colors: usize) -> Vec<(u8, u8, u8)> {
     let mut packed = BTreeSet::new();
 
-    for &(r, g, b) in seed_colors {
-        packed.insert(pack_rgb(r, g, b));
+    for color in seed_colors {
+        packed.insert(pack_rgb(color[0], color[1], color[2]));
     }
 
     packed
@@ -131,12 +119,7 @@ fn initial_palette_for_quantization(
 ) -> InitialPalette {
     match seed_colors {
         Some(seed_colors) => {
-            let seed_colors: Vec<(u8, u8, u8)> = seed_colors
-                .iter()
-                .map(|color| (color[0], color[1], color[2]))
-                .collect();
-            let initial_palette = dedup_seed_colors(&seed_colors, max_colors);
-            let seeded_path_active = !initial_palette.is_empty();
+            let initial_palette = dedup_seed_colors_from_arrays(seed_colors, max_colors);
             let deduped_seed_count = initial_palette.len();
 
             if initial_palette.is_empty() {
@@ -150,13 +133,11 @@ fn initial_palette_for_quantization(
 
                 InitialPalette {
                     palette,
-                    seeded_path_active,
                     deduped_seed_count,
                 }
             } else if initial_palette.len() >= max_colors {
                 InitialPalette {
                     palette: initial_palette,
-                    seeded_path_active,
                     deduped_seed_count,
                 }
             } else {
@@ -166,14 +147,12 @@ fn initial_palette_for_quantization(
                         &initial_palette,
                         max_colors,
                     ),
-                    seeded_path_active,
                     deduped_seed_count,
                 }
             }
         }
         None => {
             let initial_palette = generate_palette(rgba_pixels, max_colors);
-            let seeded_path_active = false;
 
             let palette = if initial_palette.len() < max_colors {
                 expand_palette_with_farthest_points(rgba_pixels, &initial_palette, max_colors)
@@ -183,24 +162,10 @@ fn initial_palette_for_quantization(
 
             InitialPalette {
                 palette,
-                seeded_path_active,
                 deduped_seed_count: 0,
             }
         }
     }
-}
-
-/// Quantize RGBA pixels to an indexed palette.
-///
-/// Returns `(palette_rgb_flat, indices)`.
-#[allow(dead_code)]
-pub(crate) fn quantize_rgba(
-    rgba_pixels: &[u8],
-    width: usize,
-    height: usize,
-    quality: u8,
-) -> (Vec<u8>, Vec<u8>) {
-    quantize_rgba_with_seed_colors(rgba_pixels, width, height, quality, None)
 }
 
 /// Quantize RGBA pixels to an indexed palette, optionally seeded from source palette colors.
@@ -227,11 +192,7 @@ pub(crate) fn quantize_rgba_with_seed_colors(
     }
 
     let initial_palette = initial_palette_for_quantization(rgba_pixels, max_colors, seed_colors);
-    let iterations = refinement_iterations(
-        quality,
-        initial_palette.seeded_path_active,
-        initial_palette.deduped_seed_count,
-    );
+    let iterations = refinement_iterations(quality, initial_palette.deduped_seed_count);
 
     let palette = refine_palette(rgba_pixels, &initial_palette.palette, iterations);
     let indices = if uses_ordered_dither(quality) {
@@ -326,16 +287,16 @@ mod tests {
 
     #[test]
     fn heuristic_uses_one_pass_for_small_seeded_palettes() {
-        assert_eq!(heuristic_refinement_iterations(80, true, 192), 1);
+        assert_eq!(heuristic_refinement_iterations(80, 192), 1);
     }
 
     #[test]
     fn heuristic_uses_three_passes_for_large_seeded_palettes() {
-        assert_eq!(heuristic_refinement_iterations(80, true, 193), 3);
+        assert_eq!(heuristic_refinement_iterations(80, 193), 3);
     }
 
     #[test]
     fn heuristic_keeps_generic_path_at_four_passes() {
-        assert_eq!(heuristic_refinement_iterations(80, false, 0), 4);
+        assert_eq!(heuristic_refinement_iterations(80, 0), 4);
     }
 }
