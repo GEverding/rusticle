@@ -83,6 +83,11 @@ Other known baseline anchors:
   - result: huge win on voyager-like indexed cases
   - decision: keep
 
+- Tier 2 temporal palette reuse (rusticle-zkvm.3)
+  - idea: when frame N-1's final palette/LUT is close enough to frame N, reuse it instead of rebuilding
+  - result: the working-tree experiment was reverted as a default path; the current encoder keeps the parallel no-imagequant flow
+  - decision: hold as an open design note, not a landed behavior
+
 - AVX2 nearest-color fast path (`1284282`)
   - idea: accelerate the hot nearest-color search
   - result: ~1.3x on `cartoon`/`photo`, flat on `voyager`
