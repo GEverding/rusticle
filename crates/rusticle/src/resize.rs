@@ -128,20 +128,29 @@ impl Gif {
             ));
         }
 
+        let Gif {
+            global_palette,
+            frames,
+            loop_count,
+            original_palette,
+            ..
+        } = self;
+
         // Process frames in parallel
-        let resized_frames: Vec<Frame> = self
-            .frames
+        let resized_frames: Vec<Frame> = frames
             .par_iter()
-            .map(|frame| resize_frame(frame, width, height, filter))
+            .map(|frame| {
+                resize_frame(frame, width, height, filter)
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Gif {
             width: width as u16,
             height: height as u16,
-            global_palette: self.global_palette.clone(),
+            global_palette,
             frames: resized_frames,
-            loop_count: self.loop_count,
-            original_palette: self.original_palette.clone(),
+            loop_count,
+            original_palette,
         })
     }
 

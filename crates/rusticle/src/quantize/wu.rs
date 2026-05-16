@@ -3,6 +3,8 @@
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
+use crate::quantize::OPAQUE_ALPHA_THRESHOLD;
+
 const HIST_BITS: u8 = 5;
 const HIST_SIZE: usize = 33;
 const HIST_MAX_BIN: usize = HIST_SIZE - 1;
@@ -67,7 +69,7 @@ fn bin_coord_index(r: usize, g: usize, b: usize) -> usize {
 
 /// Build a raw histogram from RGBA pixels.
 ///
-/// Pixels with alpha below 128 are skipped.
+/// Pixels with alpha below the opaque threshold are skipped.
 #[must_use]
 pub(crate) fn build_histogram(rgba_pixels: &[u8]) -> Histogram3D {
     let mut hist = Histogram3D::new();
@@ -78,7 +80,7 @@ pub(crate) fn build_histogram(rgba_pixels: &[u8]) -> Histogram3D {
         let b = px[2];
         let a = px[3];
 
-        if a < 128 {
+        if a < OPAQUE_ALPHA_THRESHOLD {
             continue;
         }
 
@@ -483,8 +485,8 @@ pub(crate) fn generate_palette(rgba_pixels: &[u8], max_colors: usize) -> Vec<(u8
 }
 
 /// Generate a flat RGB palette (3 bytes per color, max 768 bytes).
+#[cfg(test)]
 #[must_use]
-#[allow(dead_code)]
 pub(crate) fn generate_palette_flat(rgba_pixels: &[u8], max_colors: usize) -> Vec<u8> {
     generate_palette(rgba_pixels, max_colors)
         .into_iter()

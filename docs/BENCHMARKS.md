@@ -35,7 +35,7 @@ Performance comparisons against gifsicle 1.96 on Apple Silicon (M-series).
 | cartoon_01.gif (1.8MB) | 24 | 104ms | 479ms | **4.6x** |
 | photo_01.gif (2.7MB) | 56 | 199ms | 982ms | **4.9x** |
 
-### Fallback Path (local palette GIFs)
+### Quality-Gated Fallback Path (local palette GIFs)
 
 | Test File | Frames | rusticle | gifsicle | Speedup |
 |-----------|--------|----------|----------|---------|
@@ -114,7 +114,7 @@ Typical fast path stats on cartoon GIFs:
 1. **SIMD resize** - fast_image_resize with AVX2/NEON
 2. **Parallel frames** - rayon for multi-core processing
 3. **Fast path encoding** - skip quantization, reuse original palette
-4. **32KB palette LUT** - O(1) nearest-neighbor color mapping
+4. **262KB palette LUT (64³ entries)** - O(1) nearest-neighbor color mapping
 5. **jemalloc** - optimized allocation patterns
 
 ### When fast path activates
@@ -125,8 +125,9 @@ Typical fast path stats on cartoon GIFs:
 
 ### Quantization Strategy
 
-- **Fast path**: Palette LUT nearest-neighbor (O(1) per pixel)
-- **Fallback**: imagequant (same engine as pngquant/gifski)
+- **Fast path**: Palette LUT nearest-neighbor (O(1) per pixel) when the quality gate passes
+- **Default fallback**: imagequant (same engine as pngquant/gifski)
+- **No-imagequant variant**: Wu quantizer (`--no-default-features`)
 - **Dithering**: Floyd-Steinberg via imagequant
 
 ## Reproducing Benchmarks

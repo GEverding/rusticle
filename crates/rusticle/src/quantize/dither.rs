@@ -1,6 +1,9 @@
 //! Dithering strategies for palette quantization.
 
-use crate::quantize::kmeans::{map_pixels, nearest_color, PaletteSoA};
+#[cfg(test)]
+use crate::quantize::kmeans::map_pixels;
+use crate::quantize::kmeans::{nearest_color, PaletteSoA};
+use crate::quantize::OPAQUE_ALPHA_THRESHOLD;
 
 /// 8×8 Bayer threshold matrix normalized to [-0.5, +0.5).
 const BAYER_8X8: [[f32; 8]; 8] = [
@@ -64,7 +67,7 @@ pub(crate) fn dither_ordered(
     let spread = 32.0 * strength;
 
     for (i, px) in rgba_pixels.chunks_exact(4).enumerate() {
-        if px[3] < 128 {
+        if px[3] < OPAQUE_ALPHA_THRESHOLD {
             indices.push(0);
             continue;
         }
@@ -86,8 +89,8 @@ pub(crate) fn dither_ordered(
 /// Apply Floyd-Steinberg error-diffusion dithering.
 ///
 /// Returns palette indices, one per pixel.
+#[cfg(test)]
 #[must_use]
-#[allow(dead_code)]
 pub(crate) fn dither_floyd_steinberg(
     palette: &PaletteSoA,
     rgba_pixels: &[u8],
@@ -112,17 +115,17 @@ pub(crate) fn dither_floyd_steinberg(
             let i = y * width + x;
 
             let px = &rgba_pixels[i * 4..i * 4 + 4];
-                if px[3] < 128 {
-                    indices.push(0);
-                    continue;
-                }
+            if px[3] < OPAQUE_ALPHA_THRESHOLD {
+                indices.push(0);
+                continue;
+            }
 
             let [r, g, b] = errors[i];
             let r = clamp_to_u8(r);
             let g = clamp_to_u8(g);
             let b = clamp_to_u8(b);
             let idx = nearest_color(palette, r, g, b);
-                indices.push(idx as u8);
+            indices.push(idx as u8);
 
             let err_r = f32::from(r) - f32::from(palette.r[idx]);
             let err_g = f32::from(g) - f32::from(palette.g[idx]);
@@ -203,7 +206,7 @@ pub(crate) fn dither_floyd_steinberg_serpentine(
             for x in 0..width {
                 let i = y * width + x;
                 let px = &rgba_pixels[i * 4..i * 4 + 4];
-                if px[3] < 128 {
+                if px[3] < OPAQUE_ALPHA_THRESHOLD {
                     continue;
                 }
 
@@ -259,7 +262,7 @@ pub(crate) fn dither_floyd_steinberg_serpentine(
             for x in (0..width).rev() {
                 let i = y * width + x;
                 let px = &rgba_pixels[i * 4..i * 4 + 4];
-                if px[3] < 128 {
+                if px[3] < OPAQUE_ALPHA_THRESHOLD {
                     continue;
                 }
 
@@ -318,8 +321,8 @@ pub(crate) fn dither_floyd_steinberg_serpentine(
 }
 
 /// No dithering — simple nearest-color mapping.
+#[cfg(test)]
 #[must_use]
-#[allow(dead_code)]
 pub(crate) fn dither_none(palette: &PaletteSoA, rgba_pixels: &[u8]) -> Vec<u8> {
     map_pixels(palette, rgba_pixels)
 }

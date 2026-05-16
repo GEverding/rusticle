@@ -2,6 +2,8 @@
 
 use std::collections::BTreeSet;
 
+use crate::quantize::OPAQUE_ALPHA_THRESHOLD;
+
 /// SoA palette layout for autovectorization-friendly distance computation.
 #[derive(Clone, Debug)]
 pub(crate) struct PaletteSoA {
@@ -30,8 +32,8 @@ impl PaletteSoA {
     }
 
     /// Convert back to tuple form.
+    #[cfg(test)]
     #[must_use]
-    #[allow(dead_code)]
     pub(crate) fn to_tuples(&self) -> Vec<(u8, u8, u8)> {
         let mut colors = Vec::with_capacity(self.len);
 
@@ -69,6 +71,12 @@ fn pack_rgb(r: u8, g: u8, b: u8) -> u32 {
 
 #[inline]
 #[must_use]
+fn pack_rgb_tuple(color: (u8, u8, u8)) -> u32 {
+    pack_rgb(color.0, color.1, color.2)
+}
+
+#[inline]
+#[must_use]
 fn unpack_rgb(rgb: u32) -> (u8, u8, u8) {
     ((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8)
 }
@@ -102,13 +110,13 @@ pub(crate) fn expand_palette_with_farthest_points(
 
     let mut candidates = BTreeSet::new();
     for px in rgba_pixels.chunks_exact(4) {
-        if px[3] >= 128 {
+        if px[3] >= OPAQUE_ALPHA_THRESHOLD {
             candidates.insert(pack_rgb(px[0], px[1], px[2]));
         }
     }
 
     for color in &palette {
-        candidates.remove(&pack_rgb(color.0, color.1, color.2));
+        candidates.remove(&pack_rgb_tuple(*color));
     }
 
     let candidates: Vec<(u8, u8, u8)> = candidates.into_iter().map(unpack_rgb).collect();
@@ -134,7 +142,10 @@ pub(crate) fn expand_palette_with_farthest_points(
                     best_dist = nearest;
                 }
                 Some(current) => {
-                    if nearest > best_dist || (nearest == best_dist && pack_rgb(candidate.0, candidate.1, candidate.2) < pack_rgb(current.0, current.1, current.2)) {
+                    if nearest > best_dist
+                        || (nearest == best_dist
+                            && pack_rgb_tuple(candidate) < pack_rgb_tuple(current))
+                    {
                         best_candidate = Some(candidate);
                         best_dist = nearest;
                     }
@@ -200,7 +211,7 @@ pub(crate) fn refine_palette(
         let mut counts = vec![0_i64; palette.len];
 
         for (px, &idx) in rgba_pixels.chunks_exact(4).zip(assignments.iter()) {
-            if px[3] < 128 {
+            if px[3] < OPAQUE_ALPHA_THRESHOLD {
                 continue;
             }
 
@@ -240,7 +251,7 @@ pub(crate) fn map_pixels(palette: &PaletteSoA, rgba_pixels: &[u8]) -> Vec<u8> {
     let mut indices = Vec::with_capacity(rgba_pixels.len() / 4);
 
     for px in rgba_pixels.chunks_exact(4) {
-        if px[3] < 128 {
+        if px[3] < OPAQUE_ALPHA_THRESHOLD {
             indices.push(0);
             continue;
         }
@@ -277,7 +288,7 @@ mod tests {
         let mut total = 0_i64;
 
         for px in pixels.chunks_exact(4) {
-            if px[3] < 128 {
+            if px[3] < OPAQUE_ALPHA_THRESHOLD {
                 continue;
             }
 
@@ -369,11 +380,17 @@ mod tests {
             (200, 210, 220, 255),
             (240, 10, 80, 255),
         ]);
-        let expanded = expand_palette_with_farthest_points(&pixels, &[(10, 20, 30), (40, 50, 60)], 4);
+        let expanded =
+            expand_palette_with_farthest_points(&pixels, &[(10, 20, 30), (40, 50, 60)], 4);
 
         assert_eq!(expanded.len(), 4);
         assert!(rgb_set(&expanded).is_superset(&rgb_set(&[(10, 20, 30), (40, 50, 60)])));
-        assert!(rgb_set(&expanded).is_subset(&rgb_set(&[(10, 20, 30), (40, 50, 60), (200, 210, 220), (240, 10, 80)])));
+        assert!(rgb_set(&expanded).is_subset(&rgb_set(&[
+            (10, 20, 30),
+            (40, 50, 60),
+            (200, 210, 220),
+            (240, 10, 80)
+        ])));
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 use crate::error::{Error, Result};
 use crate::palette_lut::PaletteLut;
-use crate::types::{DisposalMethod, Gif};
+use crate::types::{DisposalMethod, Gif, Palette};
 use rayon::prelude::*;
 use std::io::Write;
 use std::sync::OnceLock;
@@ -159,7 +159,10 @@ impl Gif {
         let quantized_frames: Vec<QuantizedFrame> = self
             .frames
             .par_iter()
-            .map(|frame| quantize_frame_parallel(frame, lut_ref))
+            .map(|frame| {
+                let seed_palette = frame_seed_palette(frame, self.global_palette.as_ref());
+                quantize_frame_parallel(frame, lut_ref, seed_palette)
+            })
             .collect::<Result<Vec<_>>>()?;
 
         // Write quantized frames sequentially (GIF format requires order)
@@ -205,7 +208,9 @@ impl Gif {
             .frames
             .par_iter()
             .map(|frame| {
-                let (qframe, used_fast_path) = quantize_frame_parallel_with_stats(frame, lut_ref)?;
+                let seed_palette = frame_seed_palette(frame, self.global_palette.as_ref());
+                let (qframe, used_fast_path) =
+                    quantize_frame_parallel_with_stats(frame, lut_ref, seed_palette)?;
                 Ok((qframe, used_fast_path))
             })
             .collect::<Result<Vec<_>>>()?;
@@ -235,6 +240,7 @@ impl Gif {
 fn quantize_frame_parallel(
     frame: &crate::types::Frame,
     lut: Option<&PaletteLut>,
+    seed_palette: Option<&Palette>,
 ) -> Result<QuantizedFrame> {
     // Quantize RGBA to indexed color
     let (palette, indexed, transparent_idx) = quantize_rgba(
@@ -242,6 +248,7 @@ fn quantize_frame_parallel(
         frame.width as usize,
         frame.height as usize,
         lut,
+        seed_palette,
     )?;
 
     Ok(QuantizedFrame {
@@ -261,6 +268,7 @@ fn quantize_frame_parallel(
 fn quantize_frame_parallel_with_stats(
     frame: &crate::types::Frame,
     lut: Option<&PaletteLut>,
+    seed_palette: Option<&Palette>,
 ) -> Result<(QuantizedFrame, bool)> {
     // Quantize RGBA to indexed color
     let (palette, indexed, transparent_idx, used_fast_path) = quantize_rgba_with_stats(
@@ -268,6 +276,7 @@ fn quantize_frame_parallel_with_stats(
         frame.width as usize,
         frame.height as usize,
         lut,
+        seed_palette,
     )?;
 
     Ok((
@@ -536,6 +545,7 @@ fn quantize_rgba(
     width: usize,
     height: usize,
     lut: Option<&PaletteLut>,
+    _seed_palette: Option<&Palette>,
 ) -> Result<(Vec<u8>, Vec<u8>, Option<u8>)> {
     if rgba_pixels.len() != width * height * 4 {
         return Err(Error::EncodeError(format!(
@@ -611,8 +621,13 @@ fn quantize_rgba(
 
     #[cfg(not(feature = "imagequant"))]
     {
-        let (mut palette_rgb, mut indices) =
-            crate::quantize::quantize_rgba(rgba_pixels, width, height, 80);
+        let (mut palette_rgb, mut indices) = crate::quantize::quantize_rgba_with_seed_colors(
+            rgba_pixels,
+            width,
+            height,
+            80,
+            _seed_palette.map(|palette| palette.colors.as_slice()),
+        );
 
         let transparent_idx =
             find_transparent_index_and_remap(rgba_pixels, &mut indices, &mut palette_rgb);
@@ -628,6 +643,7 @@ fn quantize_rgba_with_stats(
     width: usize,
     height: usize,
     lut: Option<&PaletteLut>,
+    _seed_palette: Option<&Palette>,
 ) -> Result<QuantizeResult> {
     if rgba_pixels.len() != width * height * 4 {
         return Err(Error::EncodeError(format!(
@@ -703,14 +719,26 @@ fn quantize_rgba_with_stats(
 
     #[cfg(not(feature = "imagequant"))]
     {
-        let (mut palette_rgb, mut indices) =
-            crate::quantize::quantize_rgba(rgba_pixels, width, height, 80);
+        let (mut palette_rgb, mut indices) = crate::quantize::quantize_rgba_with_seed_colors(
+            rgba_pixels,
+            width,
+            height,
+            80,
+            _seed_palette.map(|palette| palette.colors.as_slice()),
+        );
 
         let transparent_idx =
             find_transparent_index_and_remap(rgba_pixels, &mut indices, &mut palette_rgb);
 
         Ok((palette_rgb, indices, transparent_idx, false))
     }
+}
+
+fn frame_seed_palette<'a>(
+    frame: &'a crate::types::Frame,
+    global: Option<&'a Palette>,
+) -> Option<&'a Palette> {
+    frame.local_palette.as_ref().or(global)
 }
 
 #[cfg(test)]
@@ -726,7 +754,7 @@ mod tests {
             255, 255, 0, 255, // Yellow
         ];
 
-        let result = quantize_rgba(&rgba_pixels, 2, 2, None);
+        let result = quantize_rgba(&rgba_pixels, 2, 2, None, None);
         assert!(result.is_ok(), "Should quantize valid RGBA data");
         let (palette, indexed, _) = result.unwrap();
         assert!(!palette.is_empty(), "Palette should not be empty");
@@ -737,7 +765,7 @@ mod tests {
     fn test_quantize_rgba_invalid_size() {
         let rgba_pixels = vec![255, 0, 0, 255]; // Only 1 pixel
 
-        let result = quantize_rgba(&rgba_pixels, 2, 2, None); // Expects 4 pixels
+        let result = quantize_rgba(&rgba_pixels, 2, 2, None, None); // Expects 4 pixels
         assert!(result.is_err(), "Should fail with size mismatch");
     }
 
@@ -750,7 +778,7 @@ mod tests {
             255, 255, 0, 255, // Yellow, opaque
         ];
 
-        let result = quantize_rgba(&rgba_pixels, 2, 2, None);
+        let result = quantize_rgba(&rgba_pixels, 2, 2, None, None);
         assert!(result.is_ok());
         let (_, indices, transparent_idx) = result.unwrap();
 
@@ -788,7 +816,7 @@ mod tests {
             255, 255, 0, 255, // Yellow, opaque
         ];
 
-        let result = quantize_rgba(&rgba_pixels, 2, 2, None);
+        let result = quantize_rgba(&rgba_pixels, 2, 2, None, None);
         assert!(result.is_ok());
         let (_, _, transparent_idx) = result.unwrap();
 

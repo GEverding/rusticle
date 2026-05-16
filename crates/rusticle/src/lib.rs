@@ -24,11 +24,12 @@
 //! # Feature flags
 //!
 //! - **`async`** — Async I/O via tokio (`Gif::from_async_read`, `Gif::encode_to_async_write`)
-//! - **`imagequant`** — Default quantizer. High-quality color quantization via imagequant.
+//! - **`imagequant`** — Default fallback quantizer when the quality-gated LUT fast path is not
+//!   accepted. High-quality color quantization via imagequant.
 //!   Note: imagequant is GPL-3.0 licensed; enabling this feature means your compiled binary
 //!   includes GPL code.
 //! - **`mit-only`** — Use with `default-features = false` for a fully MIT-licensed dependency
-//!   chain using the Wu quantizer.
+//!   chain using the Wu fallback quantizer.
 //! - **`serde`** — Serialize/deserialize `Filter`, `OptLevel`, `QualityMetrics`, etc.
 //! - **`image`** — Conversions between `Frame`/`Gif` and `image::RgbaImage`
 //! - **`butteraugli`** — Perceptual image quality metrics via butteraugli

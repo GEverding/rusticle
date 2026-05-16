@@ -51,14 +51,14 @@ rusticle quality original.gif processed.gif
 | Operation | Speedup vs gifsicle |
 |-----------|---------------------|
 | Resize (fast path) | 4.6–4.9× |
-| Resize (fallback) | 3.5–3.8× |
+| Resize (quality-gated fallback path) | 3.5–3.8× |
 | Full pipeline | 4.7–6.2× |
 
 See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for full details.
 
 ## How it's fast (Mainline Path)
 
-**Palette LUT fast path** — For GIFs with a global palette, builds a 262KB lookup table (64³ entries, 6 bits per channel) for O(1) nearest-neighbor color mapping. Skips expensive imagequant quantization entirely. Quality-gated: automatically falls back to imagequant if avg distance² ≥ 150, outlier ratio ≥ 5%, or palette utilization ≤ 30%.
+**Palette LUT fast path** — For GIFs with a global palette, builds a 262KB lookup table (64³ entries, 6 bits per channel) for O(1) nearest-neighbor color mapping. The fast path is quality-gated: it stays on the LUT path only when metrics pass; otherwise mainline encoding falls back to imagequant (default) or Wu (`--no-default-features`).
 
 **Parallel frame processing** — Rayon `par_iter` for quantization and frame optimization. Scales with core count.
 
@@ -68,7 +68,7 @@ See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for full details.
 
 **SIMD-accelerated resize** — Uses the `fast_image_resize` crate (AVX2/NEON internally).
 
-**imagequant fallback** — Same quantization engine as pngquant/gifski. Used when the fast path would produce insufficient quality.
+**imagequant fallback** — Same quantization engine as pngquant/gifski. Used by default when the quality gate rejects the LUT fast path.
 
 **Transparent index optimization** — Prefers index 0 for transparency to improve LZW compression ratio.
 
