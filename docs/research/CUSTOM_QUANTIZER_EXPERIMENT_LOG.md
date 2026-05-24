@@ -56,22 +56,22 @@ Other known baseline anchors:
   - result: helped `voyager` and some indexed cases
   - decision: keep as a seed, not a hard reuse policy
 
-- `rusticle-zkvm.1` Tier 3 seeded zero-refine shortcut
+- `rusticle-zkvm.1` Tier 3 seeded zero-refine shortcut (evaluated, then reverted)
   - loose gate first: sample limit 256, mean SSE <= 32
   - result: speed win but quality regression; cartoon 97ms -> 76ms, Avg PSNR 40.60 -> 40.05, BA 2.47 -> 2.58; photo 211ms -> 133ms, Avg PSNR 40.32 -> 39.19, BA 2.57 -> 2.80; voyager unchanged quality, 54ms -> 49ms
   - decision: reject loose gate
   - tight production gate: high quality only (>=71), non-empty seeded only, near-cap seeds (`max_colors - 16`), sample limit 1024, mean SSE <= 8, max SSE <= 64
-  - result: preserves baseline quality on the original trio; no meaningful speed win on the original trio
+  - result: preserved baseline quality on the original trio, but the win was too small to keep as default behavior
   - final numbers vs baseline: cartoon 97ms -> 93ms, Avg PSNR 40.60 -> 40.60, BA 2.47 -> 2.47; photo 211ms -> 222ms, Avg PSNR 40.32 -> 40.32, BA 2.57 -> 2.57; voyager 54ms -> 54ms, Avg PSNR 45.20 -> 45.20, BA 3.01 -> 3.01
   - timing note: local single-run numbers; noisy
-  - decision: keep only as a conservative guarded shortcut / low expected impact, or revert if we want zero overhead
+  - decision: evaluated and reverted; keep as a design/experiment note only, not a landed default path
 
 - `rusticle-zkvm.2` sampled dither dispatch
   - dispatch: NoDither for tiny error; Ordered for low/mid quality or tiny high-quality error; FS otherwise
   - thresholds: sample limit 1024, min samples 16, no-dither mean SSE <= 1 / max <= 4, high-quality ordered mean <= 4 / max <= 16
   - trio result vs baseline / tight zero-refine: quality unchanged, no meaningful speed win; mostly preserves current FS/ordered choices on the trio
   - final local single-run numbers: cartoon 97ms baseline / 93ms tight-zero-refine / 106ms dither-gate; Avg PSNR 40.60, BA 2.47 unchanged; photo 211ms baseline / 222ms tight-zero-refine / 213ms dither-gate; Avg PSNR 40.32, BA 2.57 unchanged; voyager 54ms baseline / 54ms tight-zero-refine / 53ms dither-gate; Avg PSNR 45.20, BA 3.01 unchanged
-  - decision: quality-safe but low impact on the original trio; keep only if corpus later shows wins, otherwise revert to avoid sample overhead
+  - decision: evaluated on the broader x86 corpus, then recommended for revert; the sample overhead did not justify the extra dispatch complexity
 
 - palette-space resize prototype
   - idea: resize in palette space instead of RGBA first
@@ -82,6 +82,11 @@ Other known baseline anchors:
   - idea: skip quantization entirely when the frame already fits
   - result: huge win on voyager-like indexed cases
   - decision: keep
+
+- Tier 2 temporal palette reuse (rusticle-zkvm.3)
+  - idea: when frame N-1's final palette/LUT is close enough to frame N, reuse it instead of rebuilding
+  - result: the working-tree experiment was reverted as a default path; the current encoder keeps the parallel no-imagequant flow
+  - decision: hold as an open design note, not a landed behavior
 
 - AVX2 nearest-color fast path (`1284282`)
   - idea: accelerate the hot nearest-color search

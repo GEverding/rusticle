@@ -321,6 +321,7 @@ pub(crate) fn dither_floyd_steinberg_serpentine(
 }
 
 /// No dithering — simple nearest-color mapping.
+#[cfg(test)]
 #[must_use]
 pub(crate) fn dither_none(palette: &PaletteSoA, rgba_pixels: &[u8]) -> Vec<u8> {
     if rgba_pixels.is_empty() {
